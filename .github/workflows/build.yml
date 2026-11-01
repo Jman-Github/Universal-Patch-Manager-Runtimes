@@ -1,0 +1,44 @@
+name: Build runtimes
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  packages: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "lts/*"
+          cache: npm
+      - name: Test release automation
+        run: |
+          npm ci
+          npm run test:release
+          python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            25
+            17
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-37" "build-tools;36.0.0"
+      - uses: burrunan/gradle-cache-action@v3.0.3
+      - name: Build plugins for review
+        env:
+          GITHUB_ACTOR: ${{ secrets.GPR_USER || github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GPR_READ_PACKAGES_TOKEN || github.token }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease -PsignAsDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runtime-review-apks
+          path: '**/build/outputs/apk/release/*.apk'
+          if-no-files-found: error
+          retention-days: 14

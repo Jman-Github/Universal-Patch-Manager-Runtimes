@@ -1,0 +1,103 @@
+name: Bootstrap runtime
+on:
+  workflow_dispatch:
+    inputs:
+      runtime:
+        description: Runtime to release (uses its version.properties)
+        required: true
+        type: choice
+        options: [revanced-v21, revanced-v22, morphe, reseam, shared-support]
+concurrency:
+  group: runtime-release
+  cancel-in-progress: false
+permissions:
+  contents: write
+  packages: read
+  id-token: write
+  attestations: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Resolve runtime and tag
+        shell: bash
+        env:
+          REQUESTED_RUNTIME: ${{ inputs.runtime }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          modules = {"revanced-v21":"revanced.v21-runtime-plugin", "revanced-v22":"revanced.v22-runtime-plugin", "morphe":"morphe-runtime", "reseam":"reseam-runtime", "shared-support":"shared-support"}
+          runtime = os.environ["REQUESTED_RUNTIME"]
+          values = dict(line.split("=", 1) for line in Path(modules[runtime], "version.properties").read_text().splitlines() if "=" in line)
+          tag = runtime + "-v" + values["versionName"]
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write("RUNTIME_ID=" + runtime + "\nRUNTIME_TAG=" + tag + "\n")
+          PY
+      - name: Require a first publication
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "Bootstrap must run from main." >&2
+            exit 1
+          fi
+          if [[ -n "$(git tag --list "$RUNTIME_ID-v*")" ]]; then
+            echo "Runtime already bootstrapped; use Semantic Release for later versions." >&2
+            exit 1
+          fi
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            25
+            17
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-37" "build-tools;36.0.0"
+      - uses: burrunan/gradle-cache-action@v3.0.3
+      - name: Prepare release signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > keystore.jks
+      - name: Build selected runtime
+        env:
+          GITHUB_ACTOR: ${{ secrets.GPR_USER || github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GPR_READ_PACKAGES_TOKEN || github.token }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEYSTORE_ENTRY_ALIAS: ${{ secrets.KEYSTORE_ENTRY_ALIAS }}
+          KEYSTORE_ENTRY_PASSWORD: ${{ secrets.KEYSTORE_ENTRY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease -PruntimeId="$RUNTIME_ID"
+      - name: Verify and prepare release
+        env:
+          RUNTIME_SIGNER_SHA256: ${{ vars.RUNTIME_SIGNER_SHA256 }}
+        run: python3 .github/scripts/prepare-runtime-release.py "$RUNTIME_ID" --tag "$RUNTIME_TAG" --build-tools "$ANDROID_HOME/build-tools/36.0.0"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.RUNTIME_TAG }}
+          path: runtime-release-assets/${{ env.RUNTIME_ID }}/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: runtime-release-assets/${{ env.RUNTIME_ID }}/*.apk
+      - name: Publish plugin release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$RUNTIME_TAG" >/dev/null 2>&1; then
+            echo "Release already exists; bump version.properties for a new release." >&2
+            exit 1
+          fi
+          flags=()
+          if [[ "$RUNTIME_TAG" == *-dev.* || "$RUNTIME_TAG" == *-alpha.* || "$RUNTIME_TAG" == *-beta.* || "$RUNTIME_TAG" == *-rc.* ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$RUNTIME_TAG" runtime-release-assets/"$RUNTIME_ID"/* --target "$GITHUB_SHA" --title "$RUNTIME_TAG" --generate-notes --latest=false "${flags[@]}"

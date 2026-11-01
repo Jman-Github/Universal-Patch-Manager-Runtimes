@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="app.universal.patch.manager.patcher.runtime" android:required="false" />
+    <application android:label="ReVanced v21" android:icon="@drawable/ic_runtime_plugin" android:largeHeap="true">
+        <meta-data android:name="app.universal.patch.manager.patcher.runtime.kind" android:value="revanced-v21" />
+        <meta-data android:name="app.universal.patch.manager.patcher.runtime.protocol" android:value="1" />
+        <meta-data android:name="app.universal.patch.manager.patcher.runtime.upstream" android:value="${runtimeUpstreamVersion}" />
+    </application>
+</manifest>
