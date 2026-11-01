@@ -32,6 +32,8 @@ jobs:
             25
             17
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - run: sdkmanager "platforms;android-37" "build-tools;36.0.0"
       - uses: burrunan/gradle-cache-action@v3.0.3
       - uses: actions/setup-node@v7

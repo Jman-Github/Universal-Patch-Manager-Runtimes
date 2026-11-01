@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {mkdtempSync, mkdirSync, writeFileSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import {fileURLToPath, pathToFileURL} from "node:url";
 import {execFileSync} from "node:child_process";
 import {Writable} from "node:stream";
 import semanticRelease from "semantic-release";
@@ -25,7 +26,7 @@ test("semantic-release keeps each tag namespace and computes dev prereleases", a
     writeFileSync(join(cwd, "source"), "fixed"); git("add", "."); git("commit", "-m", "fix: patch");
     git("push", "origin", "main");
     const run = (id) => semanticRelease({branches:["main",{name:"dev", prerelease:"dev"}],
-      repositoryUrl:remote, tagFormat:id+"-v${version}", dryRun:true, ci:false,
+      repositoryUrl:pathToFileURL(remote).href, tagFormat:id+"-v${version}", dryRun:true, ci:false,
       plugins:[{analyzeCommits:async()=> "patch", generateNotes:async()=> "fixture"}]},
       {cwd, env:{...process.env, GITHUB_ACTIONS:"", GITHUB_REF:"", GITHUB_REF_NAME:"", CI:""}, stdout:sink, stderr:sink});
     const stable = await run("morphe");
@@ -41,7 +42,6 @@ test("semantic-release keeps each tag namespace and computes dev prereleases", a
 
 test("release commits, tags, backmerges and stable promotion work across runtimes", async () => {
   const {releaseConfig, runtimes} = await import("./runtime-release-config.mjs");
-  const {fileURLToPath} = await import("node:url");
   const root = mkdtempSync(join(tmpdir(), "upm-runtime-pipeline-"));
   const cwd = join(root, "work");
   const remote = join(root, "remote.git");
@@ -77,7 +77,7 @@ test("release commits, tags, backmerges and stable promotion work across runtime
         {publish:async()=> ({name:"Local fixture publication"})},
         [plugin("@cleyrop-org/semantic-release-backmerge/dist/index.js"), {...config.plugins[5][1], fetchDelay:0}],
       ];
-      return semanticRelease({...config, plugins, repositoryUrl:remote, ci:false, noCi:true},
+      return semanticRelease({...config, plugins, repositoryUrl:pathToFileURL(remote).href, ci:false, noCi:true},
         {cwd, env:{...process.env, GITHUB_ACTIONS:"", GITHUB_REF:"", GITHUB_REF_NAME:"", CI:""}, stdout:sink, stderr:sink});
     };
     for (const [id, version] of [["morphe","1.1.0"],["reseam","1.6.0"]]) {
