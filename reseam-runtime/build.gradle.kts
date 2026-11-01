@@ -34,7 +34,7 @@ val strippedApkEditorLib by tasks.registering(Jar::class) {
 
 android {
     namespace = "app.universal.patch.manager.reseam.runtime"
-    compileSdk = 37
+    compileSdk = 36
     buildToolsVersion = "36.0.0"
 
     defaultConfig {

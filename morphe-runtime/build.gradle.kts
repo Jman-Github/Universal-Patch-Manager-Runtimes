@@ -17,7 +17,7 @@ val copyJvmHost = tasks.register<PluginJvmHostTask>("copyJvmHost") {
 
 android {
     namespace = "app.universal.patch.manager.morphe.runtime"
-    compileSdk = 37
+    compileSdk = 36
     buildToolsVersion = "36.0.0"
 
     defaultConfig {

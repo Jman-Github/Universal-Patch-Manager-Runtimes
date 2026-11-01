@@ -35,7 +35,7 @@ if not core.is_file():
     raise RuntimeError("Assemble the v21 runtime once before running these focused tests")
 with tempfile.TemporaryDirectory(prefix="v21-resource-write-", dir=ROOT / "build") as temporary:
     work = Path(temporary)
-    android = next((Path(os.environ["ANDROID_HOME"]) / "platforms").glob("android-37*/android.jar"))
+    android = next((Path(os.environ["ANDROID_HOME"]) / "platforms").glob("android-36/android.jar"))
     dependencies = [core, android, artifact("org.jetbrains.kotlin", "kotlin-stdlib", version=kotlin),
                     artifact("org.jetbrains.kotlinx", "kotlinx-coroutines-core-jvm"),
                     artifact("junit", "junit", version="4.13.2"), artifact("org.hamcrest", "hamcrest-core")]

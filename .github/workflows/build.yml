@@ -29,7 +29,7 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
-      - run: sdkmanager "platforms;android-37" "build-tools;36.0.0"
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: burrunan/gradle-cache-action@v3.0.3
       - name: Build plugins for review
         env:
