@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix="extension-member-merge-", dir=ROOT / "b
     subprocess.run([str(JAVAC), "--release", "17", "-cp", fix_cp, "-d", str(fix), str(runner)], check=True)
     template = (ROOT / "tests/fixtures/class-merger/ExtensionMembers.java").read_text()
     for module, group, name, version, patcher, extension in (
-        ("upm-patcher-core", "app.morphe", "morphe-patcher", "2.1.0", "app.morphe.patcher", "jar"),
+        ("upm-patcher-core", "app.morphe", "morphe-patcher", "2.2.0", "app.morphe.patcher", "jar"),
         ("revanced21-patcher-core", "app.revanced", "revanced-patcher", "21.1.0-dev.5", "app.revanced.patcher", "jar"),
         ("revanced22-patcher-core", "app.revanced", "patcher-jvm", "22.0.2-dev.1", "app.revanced.patcher", "jar"),
         ("revanced22-patcher-core", "app.revanced", "patcher-android", "22.0.2-dev.1", "app.revanced.patcher", "aar"),

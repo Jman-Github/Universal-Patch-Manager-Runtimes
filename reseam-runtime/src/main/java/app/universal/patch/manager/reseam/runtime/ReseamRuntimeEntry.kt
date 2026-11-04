@@ -29,7 +29,7 @@ import kotlinx.coroutines.runBlocking
 
 // SDK integration follows Reseam Manager's host-owned trust and Android loader setup.
 // https://git.reseam.app/reseam/manager/src/commit/3cab4b1fad/composeApp/src/androidMain/kotlin/app/reseam/manager/ReseamApplication.kt
-// https://git.reseam.app/reseam/reseam/src/tag/v0.37.1/sdk/README.md
+// https://git.reseam.app/reseam/reseam/src/tag/v0.38.0/sdk/README.md
 object ReseamRuntimeEntry {
     @JvmStatic
     fun engineVersion(): String = app.universal.patch.manager.reseam.runtime.BuildConfig.RESEAM_SDK_VERSION
