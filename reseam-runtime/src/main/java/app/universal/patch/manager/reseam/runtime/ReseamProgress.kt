@@ -1,6 +1,7 @@
 package app.universal.patch.manager.reseam.runtime
 
 import app.reseam.sdk.ClosureRunEvent
+import app.reseam.sdk.PatchPhase
 import app.reseam.sdk.PatchRef
 import app.reseam.sdk.PatchStatus
 import app.reseam.sdk.RunEvent
@@ -47,10 +48,13 @@ internal class ReseamProgress(
 
     override fun invoke(arg0: RunEvent) {
         when (arg0) {
-            is RunEvent.Info -> {
-                callback.log("INFO", arg0.message)
-                if (arg0.message == "Loading bundles") beginExecution()
-                if (arg0.message.startsWith("Writing signed output")) beginWriting()
+            is RunEvent.Info -> callback.log("INFO", arg0.message)
+            is RunEvent.PhaseStarted -> when (arg0.phase) {
+                PatchPhase.OPEN_APK -> Unit
+                PatchPhase.LOAD_BUNDLES, PatchPhase.VALIDATE_PATCHES,
+                PatchPhase.APPLY_PATCHES -> beginExecution()
+                PatchPhase.WRITE_UNSIGNED_ARTIFACTS, PatchPhase.LOAD_SIGNING_KEY,
+                PatchPhase.REWRITE_OUTPUT, PatchPhase.SIGN_ARTIFACTS -> beginWriting()
             }
             is RunEvent.PatchStarted -> {
                 beginExecution()
@@ -110,8 +114,6 @@ internal class ReseamProgress(
                 (reference in indexes && (status is PatchStatus.Skipped || status is PatchStatus.Unmountable))
         }?.key
     }
-
-    fun successfulReferences(): List<String> = references.filter { statuses[it] is PatchStatus.Applied }
 
     fun beforePublish() {
         check(terminalFailure == null) { "Reseam patch failed: " + terminalFailure }

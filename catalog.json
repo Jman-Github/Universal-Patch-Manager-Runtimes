@@ -5,7 +5,7 @@
       "id": "revanced-v21",
       "kind": "revanced-v21",
       "name": "ReVanced v21",
-      "description": "ReVanced v21 patch bundles, including legacy bundle support.",
+      "description": "Supports ReVanced v21 and legacy class-based patch bundles.",
       "packageName": "app.universal.patch.manager.revanced.v21.runtime",
       "assetName": "revanced.v21-plugin.apk",
       "dependencies": [
@@ -17,7 +17,7 @@
       "id": "revanced-v22",
       "kind": "revanced-v22",
       "name": "ReVanced v22",
-      "description": "ReVanced v22 patch bundles.",
+      "description": "Supports ReVanced v22 patch bundles.",
       "packageName": "app.universal.patch.manager.revanced.v22.runtime",
       "assetName": "revanced.v22-plugin.apk",
       "dependencies": [
@@ -29,7 +29,7 @@
       "id": "morphe",
       "kind": "morphe",
       "name": "Morphe",
-      "description": "Morphe .mpp patch bundles with JVM and ART execution.",
+      "description": "Supports Morphe patch bundles (.mpp).",
       "packageName": "app.universal.patch.manager.morphe.runtime",
       "assetName": "morphe-plugin.apk",
       "dependencies": [
@@ -40,8 +40,8 @@
     {
       "id": "reseam",
       "kind": "reseam",
-      "name": "Reseam",
-      "description": "Reseam .reseam patch bundles with its native Android SDK.",
+      "name": "ReSeam",
+      "description": "Supports ReSeam patch bundles (.reseam).",
       "packageName": "app.universal.patch.manager.reseam.runtime",
       "assetName": "reseam-runtime.apk",
       "dependencies": [
@@ -53,7 +53,7 @@
       "id": "shared-support",
       "kind": "shared-support",
       "name": "UPM runtime support",
-      "description": "Shared JVM distributions and tool hosts, downloaded once.",
+      "description": "Provides shared components required by runtime plugins.",
       "packageName": "app.universal.patch.manager.support.runtime",
       "assetName": "shared-support-plugin.apk",
       "dependencies": [],

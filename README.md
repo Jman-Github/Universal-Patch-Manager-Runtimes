@@ -8,11 +8,11 @@ Runtime plugins are built and released independently of the manager. UPM discove
 
 | Plugin | Module | Purpose |
 | --- | --- | --- |
-| ReVanced v21 | `revanced.v21-runtime-plugin` | ReVanced v21 and legacy class-based patch bundles |
-| ReVanced v22 | `revanced.v22-runtime-plugin` | ReVanced v22 patch bundles |
-| Morphe | `morphe-runtime` | Morphe patch bundles |
-| Reseam | `reseam-runtime` | Reseam patch bundles using its native Android SDK |
-| Shared support | `shared-support` | Required JVM images and tool host shared by the engines |
+| ReVanced v21 | `revanced.v21-runtime-plugin` | Supports ReVanced v21 and legacy class-based patch bundles. |
+| ReVanced v22 | `revanced.v22-runtime-plugin` | Supports ReVanced v22 patch bundles. |
+| Morphe | `morphe-runtime` | Supports Morphe patch bundles (.mpp). |
+| ReSeam | `reseam-runtime` | Supports ReSeam patch bundles (.reseam). |
+| Shared support | `shared-support` | Provides shared components required by runtime plugins. |
 
 ## Using plugins
 

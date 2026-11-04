@@ -7,9 +7,7 @@ import app.reseam.sdk.PatchPreset
 import app.reseam.sdk.PatchRequest
 import app.reseam.sdk.PatchSelection
 import app.reseam.sdk.PatchSpec
-import app.reseam.sdk.Problem
 import app.reseam.sdk.ReseamAndroidHost
-import app.reseam.sdk.SdkError
 import app.reseam.sdk.Trust
 import app.reseam.sdk.inspect
 import app.reseam.sdk.patch
@@ -31,7 +29,7 @@ import kotlinx.coroutines.runBlocking
 
 // SDK integration follows Reseam Manager's host-owned trust and Android loader setup.
 // https://git.reseam.app/reseam/manager/src/commit/3cab4b1fad/composeApp/src/androidMain/kotlin/app/reseam/manager/ReseamApplication.kt
-// https://git.reseam.app/reseam/reseam/src/tag/v0.18.3/sdk/README.md
+// https://git.reseam.app/reseam/reseam/src/tag/v0.37.1/sdk/README.md
 object ReseamRuntimeEntry {
     @JvmStatic
     fun engineVersion(): String = app.universal.patch.manager.reseam.runtime.BuildConfig.RESEAM_SDK_VERSION
@@ -202,7 +200,8 @@ object ReseamRuntimeEntry {
                     ignoreVersions = params["ignorePatchVersions"] == true
                 ),
                 output = if (components.size > 1) PatchOutput.SplitDir(signedOutput.absolutePath)
-                    else PatchOutput.SingleFile(signedOutput.absolutePath)
+                    else PatchOutput.SingleFile(signedOutput.absolutePath),
+                leaveOutFailed = params["continueOnPatchError"] == true
             )
             val events = ReseamProgress(
                 selected.map { it.reference }, selected.map { it.spec.name },
@@ -214,18 +213,9 @@ object ReseamRuntimeEntry {
             events.start()
             // SDK callbacks run synchronously inside JNI. Never re-enter the SDK or throw for
             // cancellation in callbacks; the host terminates this worker process on cancellation.
-            val outcome = try {
-                patch(request, events)
-            } catch (error: SdkError) {
-                if (params["continueOnPatchError"] != true || error.problem !is Problem.PatchesFailed) throw error
-                val successful = events.successfulReferences()
-                logger.warn("Reseam: rebuilding output with successful patches after patch failures.")
-                // The SDK refuses output on any failure. Rebuild from clean input so failed patches
-                // cannot leave partial edits in a continue-on-error result.
-                patch(request.copy(selection = request.selection.copy(
-                    enable = successful, options = selectionOptions.filterKeys { it in successful }
-                )), events)
-            }
+            // leaveOutFailed lets the SDK undo failed patches and omit their dependents
+            // without loading and applying the successful patches a second time.
+            val outcome = patch(request, events)
             checkCancelled()
             outcome.results.forEach { events.finishPatch(it.patch, it.status) }
             events.beforePublish()

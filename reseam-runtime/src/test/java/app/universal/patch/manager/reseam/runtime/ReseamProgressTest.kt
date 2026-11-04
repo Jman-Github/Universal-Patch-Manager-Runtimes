@@ -1,5 +1,6 @@
 package app.universal.patch.manager.reseam.runtime
 
+import app.reseam.sdk.PatchPhase
 import app.reseam.sdk.PatchRef
 import app.reseam.sdk.PatchStatus
 import app.reseam.sdk.RunEvent
@@ -25,7 +26,7 @@ class ReseamProgressTest {
         progress.beforePublish()
         progress.published()
         assertNull(progress.terminalFailure)
-        assertEquals(listOf("single_id"), progress.successfulReferences())
+        assertEquals(listOf("single_id"), progress.statuses.filterValues { it is PatchStatus.Applied }.keys.toList())
     }
 
     @Test fun unselectedCatalogSkipsDoNotFailPatching() {
@@ -84,7 +85,7 @@ class ReseamProgressTest {
         progress.invoke(RunEvent.PatchFinished(ref("b/a"), PatchStatus.Applied))
         progress.invoke(RunEvent.PatchFinished(ref("b/z"), PatchStatus.Applied))
         progress.invoke(RunEvent.PatchesReverted(listOf(ref("b/z"))))
-        assertEquals(listOf("b/a"), progress.successfulReferences())
+        assertEquals(listOf("b/a"), progress.statuses.filterValues { it is PatchStatus.Applied }.keys.toList())
         assertFalse(progress.statuses.containsKey("b/z"))
         assertNull(progress.terminalFailure)
         assertThrows(IllegalStateException::class.java) { progress.beforePublish() }
@@ -104,10 +105,10 @@ class ReseamProgressTest {
         assertEquals("b/a", progress.terminalFailure)
         progress.invoke(RunEvent.PatchesReverted(listOf(ref("b/a"))))
         assertNull(progress.terminalFailure)
-        assertTrue(progress.successfulReferences().isEmpty())
+        assertTrue(progress.statuses.filterValues { it is PatchStatus.Applied }.keys.toList().isEmpty())
         progress.invoke(RunEvent.PatchFinished(ref("b/a"), PatchStatus.Applied))
         progress.beforePublish()
-        assertEquals(listOf("b/a"), progress.successfulReferences())
+        assertEquals(listOf("b/a"), progress.statuses.filterValues { it is PatchStatus.Applied }.keys.toList())
     }
 
     @Test fun dependencyOrderUsesSelectionIndexes() {
@@ -128,14 +129,14 @@ class ReseamProgressTest {
         assertEquals("Completed", recorder.events.last()["type"])
     }
 
-    @Test fun rebuildDoesNotRestartCompletedRows() {
+    @Test fun duplicateResultsDoNotRestartCompletedRows() {
         val recorder = Recorder()
         val progress = ReseamProgress(listOf("b/a", "b/z"), listOf("A", "Z"), true, recorder)
         progress.invoke(RunEvent.PatchStarted(ref("b/a")))
         progress.invoke(RunEvent.PatchFinished(ref("b/a"), PatchStatus.Applied))
         progress.invoke(RunEvent.PatchFinished(ref("b/z"), PatchStatus.Failed("failure")))
         val before = recorder.events.size
-        assertEquals(listOf("b/a"), progress.successfulReferences())
+        assertEquals(listOf("b/a"), progress.statuses.filterValues { it is PatchStatus.Applied }.keys.toList())
         progress.invoke(RunEvent.PatchStarted(ref("b/a")))
         progress.invoke(RunEvent.PatchFinished(ref("b/a"), PatchStatus.Applied))
         assertEquals(before, recorder.events.size)
@@ -143,7 +144,7 @@ class ReseamProgressTest {
         assertNull(progress.terminalFailure)
     }
 
-    @Test fun rebuildReportsChangedResultWithoutRestartingRow() {
+    @Test fun changedResultIsReportedWithoutRestartingRow() {
         val recorder = Recorder()
         val progress = ReseamProgress(listOf("b/a", "b/z"), listOf("A", "Z"), true, recorder)
         progress.invoke(RunEvent.PatchStarted(ref("b/a")))
@@ -156,7 +157,7 @@ class ReseamProgressTest {
         assertEquals(1, changed.size)
         assertEquals("Failed", changed.single()["type"])
         assertEquals(0, (changed.single()["stepId"] as Map<*, *>)["index"])
-        assertTrue(progress.successfulReferences().isEmpty())
+        assertTrue(progress.statuses.filterValues { it is PatchStatus.Applied }.keys.toList().isEmpty())
         progress.beforePublish()
     }
 
@@ -179,11 +180,62 @@ class ReseamProgressTest {
         assertThrows(IllegalStateException::class.java) { progress.beforePublish() }
     }
 
+    @Test fun continueOnErrorPublishesIndependentSuccessAndReportsFailedDependentsOnce() {
+        val recorder = Recorder()
+        val progress = ReseamProgress(listOf("b/failed", "b/dependent", "b/independent"),
+            listOf("Failed", "Dependent", "Independent"), true, recorder)
+        progress.start()
+        progress.invoke(RunEvent.PatchStarted(ref("b/failed")))
+        progress.invoke(RunEvent.PatchFinished(ref("b/failed"), PatchStatus.Failed("failure")))
+        progress.invoke(RunEvent.PatchFinished(ref("b/dependent"), PatchStatus.Skipped("dependency failed")))
+        progress.invoke(RunEvent.PatchStarted(ref("b/independent")))
+        progress.invoke(RunEvent.PatchFinished(ref("b/independent"), PatchStatus.Applied))
+        val before = recorder.events.size
+        progress.statuses.toMap().forEach { (reference, status) -> progress.finishPatch(reference, status) }
+        assertEquals(before, recorder.events.size)
+        progress.beforePublish()
+        assertNull(progress.terminalFailure)
+        val failures = recorder.events.filter { it["type"] == "Failed" }
+        assertEquals(listOf(0, 1), failures.map { (it["stepId"] as Map<*, *>)["index"] })
+        assertEquals(PatchStatus.Applied, progress.statuses["b/independent"])
+        assertFalse(recorder.events.any {
+            it["type"] == "Completed" && (it["stepId"] as Map<*, *>)["kind"] == "WriteAPK"
+        })
+        progress.published()
+        assertEquals("Completed", recorder.events.last()["type"])
+    }
+
+    @Test fun sdkPhasesAdvanceStepsWithoutDuplicateStartsOrEarlyPublication() {
+        val recorder = Recorder()
+        val progress = ReseamProgress(listOf("b/a"), listOf("A"), false, recorder)
+        progress.start()
+        val phases = listOf(
+            PatchPhase.OPEN_APK to "ReadAPK",
+            PatchPhase.LOAD_BUNDLES to "ExecutePatches",
+            PatchPhase.VALIDATE_PATCHES to "ExecutePatches",
+            PatchPhase.APPLY_PATCHES to "ExecutePatches",
+            PatchPhase.WRITE_UNSIGNED_ARTIFACTS to "WriteAPK",
+            PatchPhase.LOAD_SIGNING_KEY to "WriteAPK",
+            PatchPhase.REWRITE_OUTPUT to "WriteAPK",
+            PatchPhase.SIGN_ARTIFACTS to "WriteAPK"
+        )
+        phases.forEach { (phase, expectedStep) ->
+            progress.invoke(RunEvent.PhaseStarted(phase))
+            assertEquals(phase.name, expectedStep, progress.activeStep)
+        }
+        val starts = recorder.events.filter { it["type"] == "Started" }
+        assertEquals(listOf("ReadAPK", "ExecutePatches", "WriteAPK"),
+            starts.map { (it["stepId"] as Map<*, *>)["kind"] })
+        assertFalse(recorder.events.any {
+            it["type"] == "Completed" && (it["stepId"] as Map<*, *>)["kind"] == "WriteAPK"
+        })
+    }
+
     @Test fun outputPreparationHasProgressWithoutClaimingPublicationEarly() {
         val recorder = Recorder()
         val progress = ReseamProgress(listOf("b/a"), listOf("A"), false, recorder)
         progress.invoke(RunEvent.PatchFinished(ref("b/a"), PatchStatus.Applied))
-        progress.invoke(RunEvent.Info("Writing signed output to /scratch/output"))
+        progress.invoke(RunEvent.PhaseStarted(PatchPhase.WRITE_UNSIGNED_ARTIFACTS))
         progress.beforePublish()
         progress.preparingUnsigned(0, 2)
         progress.preparingUnsigned(1, 2)
