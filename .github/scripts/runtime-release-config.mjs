@@ -8,10 +8,37 @@ export const runtimes = {
 };
 export const commonPaths = ["buildSrc/", "jvm-host/", "host-support/", "shared/", "gradle/",
   "build.gradle.kts", "settings.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat", "libs/", ".github/scripts/", ".github/workflows/"];
-export function affectsRuntime(id, paths) {
+export const engineDependencyPaths = [
+  "gradle/libs.versions.toml",
+  "buildSrc/src/main/kotlin/PatcherClassMergerCompatTransform.kt",
+];
+
+// Only narrow shared files when every changed line belongs to a known engine.
+// Unrecognized edits (including shared dependency changes) retain the broad rule.
+function dependencyOwners(path, lines) {
+  if (!lines?.length) return null;
+  const owners = new Set();
+  for (const line of lines) {
+    let owner;
+    if (path === "gradle/libs.versions.toml") {
+      if (/^\s*morphe-(patcher|library)\s*=/.test(line)) owner = "morphe";
+    } else if (path === engineDependencyPaths[1]) {
+      if (/^\s*"morphe-patcher-[^"]+\.jar",?\s*$/.test(line)) owner = "morphe";
+    }
+    if (!owner) return null;
+    owners.add(owner);
+  }
+  return owners;
+}
+
+export function affectsRuntime(id, paths, changedLines = {}) {
   if (!runtimes[id]) throw new Error("Unknown runtime: " + id);
-  return paths.some(path => commonPaths.some(prefix => path === prefix || path.startsWith(prefix.endsWith("/") ? prefix : prefix + "/")) ||
-    runtimes[id].some(module => path.startsWith(module + "/")));
+  return paths.some(path => {
+    if (runtimes[id].some(module => path.startsWith(module + "/"))) return true;
+    if (!commonPaths.some(prefix => path === prefix || path.startsWith(prefix.endsWith("/") ? prefix : prefix + "/"))) return false;
+    const owners = dependencyOwners(path, changedLines[path]);
+    return owners ? owners.has(id) : true;
+  });
 }
 export const analysis = { preset: "angular", releaseRules: [
   {breaking: true, release: "major"}, {type: "feat", release: "minor"},

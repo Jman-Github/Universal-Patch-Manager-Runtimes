@@ -51,3 +51,89 @@ test("real git history and UPM's analyzer release only affected runtimes", async
     assert.equal(await analyzeCommits(releaseConfig("morphe").plugins[0][1], {...context,commits:[forced]}), "patch");
   } finally { rmSync(cwd, {recursive:true,force:true}); }
 });
+
+test("SDK updates in shared build files release only their engines", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "upm-sdk-history-"));
+  const git = (...args) => execFileSync("git", args, {cwd, encoding:"utf8"}).trim();
+  const put = (path, text) => {
+    mkdirSync(dirname(join(cwd, path)), {recursive:true});
+    writeFileSync(join(cwd, path), text);
+  };
+  const save = message => {
+    git("add", "."); git("commit", "-m", message);
+    return {hash:git("rev-parse", "HEAD"), message};
+  };
+  const catalog = "gradle/libs.versions.toml";
+  const transform = "buildSrc/src/main/kotlin/PatcherClassMergerCompatTransform.kt";
+  try {
+    git("init", "-b", "main");
+    git("config", "user.name", "Fixture"); git("config", "user.email", "fixture@example.invalid");
+    put(catalog, '[versions]\nmorphe-patcher = "2.1.0"\nkotlin = "2.4.10"\n');
+    put(transform, 'val affected = setOf(\n    "morphe-patcher-2.1.0.jar",\n)\n');
+    put("reseam-runtime/build.gradle.kts", 'val reseamSdkVersion = "0.37.1"\n');
+    save("chore: baseline");
+    git("checkout", "-b", "dev");
+    put(catalog, '[versions]\nmorphe-patcher = "2.2.0"\nkotlin = "2.4.10"\n');
+    put(transform, 'val affected = setOf(\n    "morphe-patcher-2.1.0.jar",\n    "morphe-patcher-2.2.0.jar",\n)\n');
+    put("reseam-runtime/build.gradle.kts", 'val reseamSdkVersion = "0.38.0"\n');
+    const update = save("fix(runtimes): update ReSeam and Morphe");
+    const context = {cwd, commits:[update], logger:{log(){}}, options:{}};
+    const check = async (commits, expected) => {
+      for (const id of ["morphe", "reseam", "revanced-v21", "revanced-v22", "shared-support"]) {
+        const selected = {...context, commits};
+        assert.equal(filterCommits(id, selected).length, expected.includes(id) ? commits.length : 0, id);
+        assert.equal(await analyzeCommits(releaseConfig(id).plugins[0][1], selected),
+          expected.includes(id) ? "patch" : null, id);
+      }
+    };
+    await check([update], ["morphe", "reseam"]);
+    git("checkout", "main"); git("merge", "--no-ff", "dev", "-m", "fix: merge SDK updates");
+    await check([{hash:git("rev-parse", "HEAD"), message:"fix: merge SDK updates"}], ["morphe", "reseam"]);
+    put(catalog, '[versions]\nmorphe-patcher = "2.3.0"\nkotlin = "2.4.10"\n');
+    await check([save("fix(morphe): update patcher")], ["morphe"]);
+    put("reseam-runtime/build.gradle.kts", 'val reseamSdkVersion = "0.39.0"\n');
+    await check([save("fix(reseam): update SDK")], ["reseam"]);
+    put(catalog, '[versions]\nmorphe-patcher = "2.3.0"\nkotlin = "2.4.21"\n');
+    const shared = save("fix: update shared Kotlin dependency");
+    await check([shared], ["morphe", "reseam", "revanced-v21", "revanced-v22", "shared-support"]);
+    put(transform, 'val affected = emptySet<String>()\n');
+    const logic = save("fix: change shared transform logic");
+    await check([logic], ["morphe", "reseam", "revanced-v21", "revanced-v22", "shared-support"]);
+  } finally { rmSync(cwd, {recursive:true, force:true}); }
+});
+
+test("shared lines resembling diff headers still release all runtimes", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "upm-shared-diff-history-"));
+  const git = (...args) => execFileSync("git", args, {cwd, encoding:"utf8"}).trim();
+  const transform = "buildSrc/src/main/kotlin/PatcherClassMergerCompatTransform.kt";
+  const put = (version, statement = "") => {
+    mkdirSync(dirname(join(cwd, transform)), {recursive:true});
+    writeFileSync(join(cwd, transform), "fun sharedCounter(): Int {\n    var count = 0\n" +
+      (statement ? statement + "\n" : "") + '    val affected = setOf(\n        "morphe-patcher-' +
+      version + '.jar",\n    )\n    return count\n}\n');
+  };
+  const save = message => {
+    git("add", "."); git("commit", "-m", message);
+    return {hash:git("rev-parse", "HEAD"), message};
+  };
+  const check = async commit => {
+    const context = {cwd, commits:[commit], logger:{log(){}}, options:{}};
+    for (const id of ["morphe", "reseam", "revanced-v21", "revanced-v22", "shared-support"]) {
+      assert.equal(filterCommits(id, context).length, 1, `${id}: ${commit.message}`);
+      assert.equal(await analyzeCommits(releaseConfig(id).plugins[0][1], context), "patch", id);
+    }
+  };
+  try {
+    git("init", "-b", "main");
+    git("config", "user.name", "Fixture"); git("config", "user.email", "fixture@example.invalid");
+    put("2.1.0"); save("chore: baseline");
+    let version = 1;
+    for (const statement of ["++count", "--count"]) {
+      // Kotlin permits column-zero statements; their patch lines resemble file headers.
+      put(`2.${++version}.0`, statement);
+      await check(save(`fix: update Morphe and add shared ${statement}`));
+      put(`2.${++version}.0`);
+      await check(save(`fix: update Morphe and remove shared ${statement}`));
+    }
+  } finally { rmSync(cwd, {recursive:true, force:true}); }
+});

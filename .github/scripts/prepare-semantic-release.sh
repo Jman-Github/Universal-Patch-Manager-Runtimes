@@ -8,5 +8,6 @@ branch="${3:?branch is required}"
 python3 .github/scripts/runtime-version.py "$runtime" "$version"
 export GITHUB_ACTOR="${GPR_USER:-${GITHUB_ACTOR:-github-actions}}"
 export GITHUB_TOKEN="${GPR_READ_PACKAGES_TOKEN:-${GITHUB_TOKEN:-}}"
-./gradlew assembleRelease -PruntimeId="$runtime"
+# Backmerge can stash the workflow's chmod; do not depend on the executable bit.
+bash ./gradlew assembleRelease -PruntimeId="$runtime"
 python3 .github/scripts/prepare-runtime-release.py "$runtime" --tag "$runtime-v$version" --build-tools "$ANDROID_HOME/build-tools/36.0.0"
