@@ -2,6 +2,13 @@
 
 Generated from Conventional Commits affecting this runtime.
 
+## [1.0.4](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/reseam-v1.0.3...reseam-v1.0.4) (2026-11-06)
+
+
+### Bug Fixes
+
+* **reseam:** bump SDK to 0.39.1 ([1842b29](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/commit/1842b29ba101aa4c3cccab51addf971c9fdbf3da))
+
 ## [1.0.3](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/reseam-v1.0.2...reseam-v1.0.3) (2026-11-06)
 
 
