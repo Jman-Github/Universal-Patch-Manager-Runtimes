@@ -3,9 +3,7 @@ package app.universal.patch.manager.patcher.morphe
 import app.universal.patch.manager.patcher.runtime.RuntimeDevice
 import app.morphe.patcher.Patcher
 import app.morphe.patcher.PatcherConfig
-import app.morphe.patcher.PatcherResult
 import app.morphe.patcher.dex.BytecodeMode
-import app.morphe.patcher.apk.ApkUtils.applyTo
 import app.morphe.patcher.patch.Patch
 import app.morphe.patcher.patch.PatchResult
 import app.universal.patch.manager.patcher.ProgressEvent
@@ -15,35 +13,28 @@ import app.universal.patch.manager.patcher.morphe.MorpheSession.Companion.compon
 import app.universal.patch.manager.patcher.morphe.MorpheSession.Companion.component2
 import app.universal.patch.manager.patcher.runCancellableBlockingIo
 import app.universal.patch.manager.patcher.runStep
-import app.universal.patch.manager.patcher.split.SplitApkPreparer
 import app.universal.patch.manager.patcher.toSafeRemoteError
 import app.universal.patch.manager.patcher.toSafeStackTraceString
 import app.universal.patch.manager.patcher.util.NativeLibStripper
 import app.universal.patch.manager.patcher.util.XmlSurrogateSanitizer
 import app.universal.patch.manager.patcher.toRemoteError
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.yield
-import java.io.BufferedInputStream
 import java.io.Closeable
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.LinkedHashSet
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
-import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Attr
 import org.w3c.dom.Element
 import kotlin.time.Duration
 import kotlin.time.measureTime
-import kotlin.time.measureTimedValue
 
-internal typealias MorphePatchList = List<Patch<*>>
+internal typealias MorphePatchList = List<Patch>
 
 class MorpheSession(
     cacheDir: String,
@@ -392,52 +383,19 @@ class MorpheSession(
                 }
 
                 checkCancelled()
-                emitWriteApkProgress("Copy base APK")
                 logger.info("Writing patched files...")
                 XmlSurrogateSanitizer.sanitize(tempDir.resolve("apk"), logger)
                 ensureMissingDrawables()
                 validateMissingResourceReferences()
                 checkCancelled()
-                val (result, duration) = runCancellableBlockingIo(checkCancelled) {
-                    measureTimedValue { patcher.get() }
-                }
-                compileTime = duration
-                // Use the resource APK directly when available; applyTo already treats it as the base.
-                val patched = result.resources.resourcesApk ?: tempDir.resolve("result.apk").also {
-                    runCancellableBlockingIo(checkCancelled) {
-                        fastCopy(input, it)
-                    }
-                }
-                result.dexFiles.forEach { dex ->
-                    checkCancelled()
-                    val entryName = dex.name
-                    if (isDexEntryName(entryName)) {
-                        onEvent(
-                            ProgressEvent.Progress(
-                                stepId = StepId.WriteAPK,
-                                message = "Compiling $entryName"
-                            )
-                        )
-                    }
-                }
-                result.resources?.let { resources ->
-                    if (
-                        resources.resourcesApk != null ||
-                        resources.otherResources != null ||
-                        resources.deleteResources.isNotEmpty()
-                    ) {
-                        onEvent(
-                            ProgressEvent.Progress(
-                                stepId = StepId.WriteAPK,
-                                message = "Compiling modified resources"
-                            )
-                        )
-                    }
-                }
                 emitWriteApkProgress("Applying patched changes")
-                runCancellableBlockingIo(checkCancelled) {
-                    checkCancelled()
-                    result.applyTo(patched)
+                emitWriteApkProgress(writeApkDexGroupTitle())
+                val patched = tempDir.resolve("patched.apk")
+                // Code adapted from Morphe, see third-party/NOTICE for more information.
+                // https://github.com/MorpheApp/morphe-manager/pull/1345
+                compileTime = runCancellableBlockingIo(checkCancelled) {
+                    // Compile and write the aligned, unsigned APK once.
+                    measureTime { patcher.writeApk(patched) }
                 }
                 checkCancelled()
 
@@ -479,7 +437,6 @@ class MorpheSession(
     private fun buildWriteApkSubSteps(
         includeStripNativeLibs: Boolean = false
     ): List<String> = buildList {
-        add("Copy base APK")
         add("Applying patched changes")
         add(writeApkDexGroupTitle())
         add("Compiling modified resources")
@@ -494,113 +451,6 @@ class MorpheSession(
         BytecodeMode.FULL -> "Compiling DEX files: FULL"
         else -> "Compiling DEX files: FAST"
     }
-
-    private fun isDexEntryName(name: String): Boolean =
-        name.startsWith("classes") && name.endsWith(".dex", ignoreCase = true)
-
-    private fun dexSortKey(name: String): Int {
-        val base = name.removeSuffix(".dex")
-        if (base == "classes") return 1
-        val suffix = base.removePrefix("classes")
-        return suffix.toIntOrNull() ?: Int.MAX_VALUE
-    }
-
-    private suspend fun listWritePreloadDexNames(apkDir: File, inputFile: File): List<String> {
-        val decodedDexNames = listDexNamesFromDecodedApkDir(apkDir)
-        val inputDexNames = listDexNames(inputFile)
-        return (inputDexNames + decodedDexNames)
-            .distinct()
-            .sortedWith(compareBy(::dexSortKey))
-    }
-
-    private suspend fun listDexNamesFromDecodedApkDir(apkDir: File): List<String> =
-        runInterruptible(Dispatchers.IO) {
-            if (!apkDir.isDirectory) return@runInterruptible emptyList<String>()
-            val dexNames = mutableSetOf<String>()
-            apkDir.walkTopDown().forEach { entry ->
-                when {
-                    entry.isDirectory -> decodedDexDirectoryToDexName(entry.name)?.let(dexNames::add)
-                    entry.isFile &&
-                        entry.name.startsWith("classes") &&
-                        entry.name.endsWith(".dex", ignoreCase = true) -> dexNames.add(entry.name)
-                }
-            }
-            dexNames.sortedWith(compareBy { dexSortKey(it) })
-        }
-
-    private fun decodedDexDirectoryToDexName(name: String): String? = when {
-        name.equals("smali", ignoreCase = true) -> "classes.dex"
-        name.startsWith("smali_classes", ignoreCase = true) -> {
-            val suffix = name.substring("smali_classes".length)
-            suffix.takeIf { it.isNotEmpty() && it.all(Char::isDigit) }?.let { "classes${it}.dex" }
-        }
-
-        else -> null
-    }
-
-    private suspend fun listDexNames(file: File): List<String> {
-        if (!file.exists()) return emptyList()
-        if (!SplitApkPreparer.isSplitArchive(file)) {
-            return listDexNamesFromApk(file)
-        }
-        return listDexNamesFromSplitArchive(file)
-    }
-
-    private fun mergeDexNames(
-        initialDexNames: List<String>,
-        result: PatcherResult
-    ): List<String> {
-        val patchedDexNames = result.dexFiles
-            .mapNotNull { it.name }
-            .filter { it.endsWith(".dex", ignoreCase = true) }
-        if (patchedDexNames.isEmpty()) return initialDexNames
-        return (initialDexNames + patchedDexNames)
-            .distinct()
-            .sortedWith(compareBy { dexSortKey(it) })
-    }
-
-    private suspend fun listDexNamesFromApk(file: File): List<String> =
-        runInterruptible(Dispatchers.IO) {
-            if (!file.exists()) return@runInterruptible emptyList<String>()
-            ZipFile(file).use { zip ->
-                zip.entries().asSequence()
-                    .filterNot { it.isDirectory }
-                    .map { it.name }
-                    .filter { it.startsWith("classes") && it.endsWith(".dex") }
-                    .sortedWith(compareBy { dexSortKey(it) })
-                    .toList()
-            }
-        }
-
-    private suspend fun listDexNamesFromSplitArchive(file: File): List<String> =
-        runInterruptible(Dispatchers.IO) {
-            if (!file.exists()) return@runInterruptible emptyList<String>()
-            val dexNames = mutableSetOf<String>()
-            val splitEntryNames = SplitApkPreparer.splitApkEntryNames(file)
-            ZipFile(file).use { outer ->
-                val entries = outer.entries().asSequence()
-                    .filterNot { it.isDirectory }
-                    .filter { it.name in splitEntryNames }
-                    .toList()
-                if (entries.isEmpty()) return@use
-                entries.forEach { entry ->
-                    outer.getInputStream(entry).use { raw ->
-                        ZipInputStream(BufferedInputStream(raw)).use { inner ->
-                            while (true) {
-                                val innerEntry = inner.nextEntry ?: break
-                                if (!innerEntry.isDirectory &&
-                                    innerEntry.name.startsWith("classes") &&
-                                    innerEntry.name.endsWith(".dex")
-                                ) {
-                                    dexNames.add(innerEntry.name)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            dexNames.sortedWith(compareBy { dexSortKey(it) })
-        }
 
     private fun ensureMissingDrawables() {
         val resDir = tempDir.resolve("apk").resolve("res")
@@ -803,20 +653,11 @@ class MorpheSession(
         factory.newDocumentBuilder().parse(file)
     }.getOrNull()
 
-    private fun fastCopy(source: File, target: File) {
-        FileInputStream(source).channel.use { input ->
-            FileOutputStream(target).channel.use { output ->
-                var position = 0L
-                val size = input.size()
-                while (position < size) {
-                    position += input.transferTo(position, size - position, output)
-                }
-            }
-        }
-    }
-
     override fun close() {
         tempDir.deleteRecursively()
+        // Android 15+ native loaders can make workspace directories read-only for W^X.
+        // https://github.com/MorpheApp/morphe-manager/commit/e785b35cc5159a9f65e28b3d240f345d3c6555d3
+        fileWorkspace.walkTopDown().forEach { it.setWritable(true) }
         fileWorkspace.deleteRecursively()
         patcher.close()
     }

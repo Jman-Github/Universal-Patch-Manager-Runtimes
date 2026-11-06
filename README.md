@@ -24,6 +24,19 @@ Engine plugins carry their own app icons. Release preparation generates catalog 
 
 Manager data exports preserve runtime configuration, not the runtime APK files. Restoring a backup may require downloading the plugins again or importing local APKs.
 
+## Development pull requests
+
+Pushes to `dev` open a draft pull request into `main` when there are new
+file changes. Later pushes update the same PR through its `dev` head branch.
+The workflow leaves existing PR titles, descriptions and draft status intact.
+It can also be run manually from `dev` using **Open a PR to main** in Actions.
+Committing locally does not trigger GitHub Actions; the commit must be pushed.
+
+In repository **Settings → Actions → General → Workflow permissions**, enable
+**Allow GitHub Actions to create and approve pull requests**. The workflow
+requests read access to contents and write access to pull requests.
+Merging into `main` triggers the stable release workflow.
+
 ## License and attribution
 
 See [LICENSE](LICENSE), [source attribution](SOURCE.md), and [third-party notices](third-party/NOTICE.txt). Original copyright headers and upstream references are retained in the source.

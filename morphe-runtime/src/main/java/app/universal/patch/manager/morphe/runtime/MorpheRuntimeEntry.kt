@@ -367,7 +367,7 @@ object MorpheRuntimeEntry {
         }
     }
 
-    private fun patchToMap(patch: Patch<*>): Map<String, Any?> {
+    private fun patchToMap(patch: Patch): Map<String, Any?> {
         val result = LinkedHashMap<String, Any?>()
         result["name"] = patch.name.orEmpty()
         result["description"] = patch.description

@@ -4,6 +4,8 @@ UPM Runtime Plugins contains runtime engines and supporting code extracted from 
 
 Original copyright headers and upstream references remain in the source files. Runtime architecture and host code include adaptations from Morphe Manager. Engine SDKs and other dependencies retain their respective licenses and notices.
 
+See the [upstream change references](upm-patcher-core/README.md#upstream-changes-used-by-upm) for the manager/runtime split and the Morphe commits and PRs used by the JVM and APK writer adaptations.
+
 See the repository [LICENSE](LICENSE), [third-party notices](third-party/NOTICE), and [Morphe notices](third-party/NOTICE.txt).
 
 The required Morphe attribution is:
