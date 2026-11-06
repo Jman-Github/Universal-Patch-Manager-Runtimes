@@ -36,7 +36,7 @@ object MorphePatchBundleLoader {
     }
 
     @JvmOverloads
-    fun loadBundle(bundlePath: String, logger: Logger? = null): Collection<Patch<*>> {
+    fun loadBundle(bundlePath: String, logger: Logger? = null): Collection<Patch> {
         val file = File(bundlePath)
         val key = Stamp(file.canonicalPath, file.length(), file.lastModified())
         val preload = prepared.remove(key)
@@ -65,7 +65,7 @@ object MorphePatchBundleLoader {
         }
     }
 
-    private fun loadFresh(bundlePath: String): Collection<Patch<*>> {
+    private fun loadFresh(bundlePath: String): Collection<Patch> {
         if (isArt) validateDexEntries(bundlePath)
         val optimizedDexDirectory = optimizedDexDirectory(bundlePath)
         val patchFiles = runCatching {
@@ -100,7 +100,7 @@ object MorphePatchBundleLoader {
      * Code adapted from Morphe; see third-party/NOTICE.txt.
      * https://github.com/MorpheApp/morphe-patcher/blob/v2.0.0/src/main/kotlin/app/morphe/patcher/patch/Patch.kt
      */
-    private fun loadJvmPatches(file: File): Map<File, Set<Patch<*>>> {
+    private fun loadJvmPatches(file: File): Map<File, Set<Patch>> {
         val loader = URLClassLoader(arrayOf(file.toURI().toURL()), Patch::class.java.classLoader)
         try {
             val names = JarFile(file).use { jar ->
@@ -114,7 +114,7 @@ object MorphePatchBundleLoader {
                 .apply { isAccessible = true }
             @Suppress("UNCHECKED_CAST")
             val patches = try {
-                discover.invoke(companion, loader, mapOf(file to names)) as Map<File, Set<Patch<*>>>
+                discover.invoke(companion, loader, mapOf(file to names)) as Map<File, Set<Patch>>
             } catch (error: InvocationTargetException) {
                 throw error.targetException
             }
