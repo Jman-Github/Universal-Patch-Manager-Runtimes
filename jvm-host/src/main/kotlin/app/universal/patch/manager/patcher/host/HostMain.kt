@@ -17,6 +17,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Disposable worker entry point, plus the command-pipe protocol for older managers. */
 fun main(args: Array<String>) {
+    // Patches use ART's vendor string to select Android native libraries on embedded OpenJDK.
+    // https://github.com/MorpheApp/morphe-manager/commit/e785b35cc5159a9f65e28b3d240f345d3c6555d3
+    System.setProperty("java.vendor", "The Android Project")
     if (args.size == 3) {
         // A disposable worker owns the VM, so ending an exhausted run leaves the manager alive.
         try {

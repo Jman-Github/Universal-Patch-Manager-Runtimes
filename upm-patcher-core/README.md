@@ -54,6 +54,22 @@ On Windows, use `.\gradlew.bat assembleRelease`. Android SDK and dependency requ
 
 Focused regression scripts under `tests/scripts/` cover host isolation, memory behavior, bundle loading and APK preparation. Some checks require previously built host JARs and cached compiler dependencies.
 
+## Upstream changes used by UPM
+
+These Morphe Manager changes are adapted across the manager and runtime
+repositories:
+
+| Upstream change | UPM implementation |
+| --- | --- |
+| [Memory-tagging startup fix (`ad2f464`)](https://github.com/MorpheApp/morphe-manager/commit/ad2f4644edfe848a3d09260b2f53c441ebfd6161) | The manager disables heap tagging before loading HotSpot and reports startup failure if active memory-tag checks cannot be disabled. |
+| [JVM exception logging (`9ea4626`)](https://github.com/MorpheApp/morphe-manager/commit/9ea4626a025aa1e69ecfd3830b6a8cb211702559) | The manager writes Java exception stack traces to Android's log, one line at a time. |
+| [Bundled native-library support (`e785b35`)](https://github.com/MorpheApp/morphe-manager/commit/e785b35cc5159a9f65e28b3d240f345d3c6555d3) | The manager enables native access for unnamed modules. The runtime JVM host sets Android's vendor property, and the Morphe session restores workspace write permissions before cleanup. |
+| [One-pass APK writing (PR #1345)](https://github.com/MorpheApp/morphe-manager/pull/1345) | The Morphe runtime uses `Patcher.writeApk()` instead of `get()` followed by `applyTo()`, retaining UPM's cancellation checks, progress reporting and output handling. |
+
+The APK writer API comes from
+[Morphe Patcher PR #274](https://github.com/MorpheApp/morphe-patcher/pull/274).
+UPM's runtime already uses Morphe Patcher 2.2.0, which includes this API.
+
 ## Attribution and licenses
 
 

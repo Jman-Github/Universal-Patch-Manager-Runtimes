@@ -5,7 +5,6 @@ import app.morphe.patcher.Patcher
 import app.morphe.patcher.PatcherConfig
 import app.morphe.patcher.PatcherResult
 import app.morphe.patcher.dex.BytecodeMode
-import app.morphe.patcher.apk.ApkUtils.applyTo
 import app.morphe.patcher.patch.Patch
 import app.morphe.patcher.patch.PatchResult
 import app.universal.patch.manager.patcher.ProgressEvent
@@ -28,7 +27,6 @@ import kotlinx.coroutines.yield
 import java.io.BufferedInputStream
 import java.io.Closeable
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -41,7 +39,6 @@ import org.w3c.dom.Attr
 import org.w3c.dom.Element
 import kotlin.time.Duration
 import kotlin.time.measureTime
-import kotlin.time.measureTimedValue
 
 internal typealias MorphePatchList = List<Patch<*>>
 
@@ -392,52 +389,19 @@ class MorpheSession(
                 }
 
                 checkCancelled()
-                emitWriteApkProgress("Copy base APK")
                 logger.info("Writing patched files...")
                 XmlSurrogateSanitizer.sanitize(tempDir.resolve("apk"), logger)
                 ensureMissingDrawables()
                 validateMissingResourceReferences()
                 checkCancelled()
-                val (result, duration) = runCancellableBlockingIo(checkCancelled) {
-                    measureTimedValue { patcher.get() }
-                }
-                compileTime = duration
-                // Use the resource APK directly when available; applyTo already treats it as the base.
-                val patched = result.resources.resourcesApk ?: tempDir.resolve("result.apk").also {
-                    runCancellableBlockingIo(checkCancelled) {
-                        fastCopy(input, it)
-                    }
-                }
-                result.dexFiles.forEach { dex ->
-                    checkCancelled()
-                    val entryName = dex.name
-                    if (isDexEntryName(entryName)) {
-                        onEvent(
-                            ProgressEvent.Progress(
-                                stepId = StepId.WriteAPK,
-                                message = "Compiling $entryName"
-                            )
-                        )
-                    }
-                }
-                result.resources?.let { resources ->
-                    if (
-                        resources.resourcesApk != null ||
-                        resources.otherResources != null ||
-                        resources.deleteResources.isNotEmpty()
-                    ) {
-                        onEvent(
-                            ProgressEvent.Progress(
-                                stepId = StepId.WriteAPK,
-                                message = "Compiling modified resources"
-                            )
-                        )
-                    }
-                }
                 emitWriteApkProgress("Applying patched changes")
-                runCancellableBlockingIo(checkCancelled) {
-                    checkCancelled()
-                    result.applyTo(patched)
+                emitWriteApkProgress(writeApkDexGroupTitle())
+                val patched = tempDir.resolve("patched.apk")
+                // Code adapted from Morphe, see third-party/NOTICE for more information.
+                // https://github.com/MorpheApp/morphe-manager/pull/1345
+                compileTime = runCancellableBlockingIo(checkCancelled) {
+                    // Compile and write the aligned, unsigned APK once.
+                    measureTime { patcher.writeApk(patched) }
                 }
                 checkCancelled()
 
@@ -479,7 +443,6 @@ class MorpheSession(
     private fun buildWriteApkSubSteps(
         includeStripNativeLibs: Boolean = false
     ): List<String> = buildList {
-        add("Copy base APK")
         add("Applying patched changes")
         add(writeApkDexGroupTitle())
         add("Compiling modified resources")
@@ -803,20 +766,11 @@ class MorpheSession(
         factory.newDocumentBuilder().parse(file)
     }.getOrNull()
 
-    private fun fastCopy(source: File, target: File) {
-        FileInputStream(source).channel.use { input ->
-            FileOutputStream(target).channel.use { output ->
-                var position = 0L
-                val size = input.size()
-                while (position < size) {
-                    position += input.transferTo(position, size - position, output)
-                }
-            }
-        }
-    }
-
     override fun close() {
         tempDir.deleteRecursively()
+        // Android 15+ native loaders can make workspace directories read-only for W^X.
+        // https://github.com/MorpheApp/morphe-manager/commit/e785b35cc5159a9f65e28b3d240f345d3c6555d3
+        fileWorkspace.walkTopDown().forEach { it.setWritable(true) }
         fileWorkspace.deleteRecursively()
         patcher.close()
     }
