@@ -11,7 +11,7 @@ plugins {
 val runtimeVersion = Properties().apply { project.file("version.properties").inputStream().use(::load) }
 
 
-val reseamSdkVersion = "0.39.1"
+val reseamSdkVersion = "0.40.0"
 val apkEditorLib by configurations.creating
 
 val strippedApkEditorLib by tasks.registering(Jar::class) {
