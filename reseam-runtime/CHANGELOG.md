@@ -2,6 +2,13 @@
 
 Generated from Conventional Commits affecting this runtime.
 
+## [1.0.6](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/reseam-v1.0.5...reseam-v1.0.6) (2026-11-11)
+
+
+### Bug Fixes
+
+* **release:** recover interrupted runtime publications ([f16a970](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/commit/f16a970392cc0d457a01f37ce1bdc9e2975481b8))
+
 ## [1.0.5](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/reseam-v1.0.4...reseam-v1.0.5) (2026-11-11)
 
 
