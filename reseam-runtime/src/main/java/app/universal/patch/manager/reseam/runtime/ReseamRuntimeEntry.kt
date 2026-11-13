@@ -51,7 +51,10 @@ object ReseamRuntimeEntry {
     private fun inspectBundle(path: String): InspectResponse {
         ReseamAndroidHost.setClassLoader(ReseamRuntimeEntry::class.java.classLoader!!)
         val response = inspect(
-            InspectRequest(splitPaths = emptyList(), bundlePaths = listOf(path), trust = Trust(emptyList()))
+            InspectRequest(
+                splitPaths = emptyList(), bundlePaths = listOf(path), trust = Trust(emptyList()),
+                deviceAbis = emptyList()
+            )
         )
         val bundle = response.bundles.single()
         bundle.problem?.let { throw IllegalArgumentException(reseamBundleProblemMessage(it)) }
@@ -201,6 +204,8 @@ object ReseamRuntimeEntry {
                 ),
                 output = if (components.size > 1) PatchOutput.SplitDir(signedOutput.absolutePath)
                     else PatchOutput.SingleFile(signedOutput.absolutePath),
+                // UPM already filters libraries and split modules above. Keep that exact selection.
+                deviceAbis = emptyList(),
                 leaveOutFailed = params["continueOnPatchError"] == true
             )
             val events = ReseamProgress(
