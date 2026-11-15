@@ -2,6 +2,19 @@
 
 Generated from Conventional Commits affecting this runtime.
 
+## [1.0.4](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/morphe-v1.0.3...morphe-v1.0.4) (2026-11-15)
+
+
+### Bug Fixes
+
+* **release:** prevent skipped runtime releases ([ed290cb](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/commit/ed290cbd4a8ea527b9688beaec9c39ff2282b25f))
+* **runtimes:** update Morphe Patcher to 2.4.0 ([388b6c7](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/commit/388b6c7bd0d37a4422544489d8819b1f818373bc))
+
+
+### Performance Improvements
+
+* **runtimes:** speed up native library stripping ([9222f93](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/commit/9222f93e9eba43a9ec9029b3b5b96dd459db04cd))
+
 ## [1.0.3](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/morphe-v1.0.2...morphe-v1.0.3) (2026-11-11)
 
 
