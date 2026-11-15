@@ -2,6 +2,13 @@
 
 Generated from Conventional Commits affecting this runtime.
 
+## [1.0.4](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/revanced-v21-v1.0.3...revanced-v21-v1.0.4) (2026-11-15)
+
+
+### Bug Fixes
+
+* **release:** prevent skipped runtime releases ([ed290cb](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/commit/ed290cbd4a8ea527b9688beaec9c39ff2282b25f))
+
 ## [1.0.3](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/revanced-v21-v1.0.2...revanced-v21-v1.0.3) (2026-11-15)
 
 
