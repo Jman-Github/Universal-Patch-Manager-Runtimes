@@ -154,6 +154,13 @@ object RevancedRuntimeEntry {
                             logger,
                             stripNativeLibs,
                             skipUnneededSplits,
+                            onStripProgress = { percent ->
+                                throwIfCancelled()
+                                onEvent(ProgressEvent.Progress(
+                                    stepId = StepId.PrepareSplitApk, current = percent.toLong(), total = 100L,
+                                    message = "Stripping native libraries"
+                                ))
+                            },
                             onProgress = { message ->
                                 throwIfCancelled()
                                 onEvent(

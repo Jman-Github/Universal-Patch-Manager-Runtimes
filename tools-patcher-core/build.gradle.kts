@@ -32,6 +32,7 @@ kotlin {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     implementation(project(":jvm-host"))
     implementation("com.google.guava:guava:33.2.1-jre")
     implementation("com.android.tools.build:apkzlib:8.5.2")

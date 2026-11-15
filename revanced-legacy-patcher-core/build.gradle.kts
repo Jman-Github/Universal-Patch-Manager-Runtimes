@@ -34,6 +34,7 @@ kotlin {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     testImplementation(kotlin("test-junit"))
     implementation(project(":jvm-host"))
     implementation("com.google.guava:guava:32.1.2-jre")

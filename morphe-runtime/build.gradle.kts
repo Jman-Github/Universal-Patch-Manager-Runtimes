@@ -95,6 +95,7 @@ kotlin {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     jvmHost(project(":upm-patcher-core", "hostJar"))
     implementation(libs.arsclib)
     implementation(libs.morphe.patcher) {

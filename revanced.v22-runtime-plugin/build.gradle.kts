@@ -120,6 +120,7 @@ androidComponents {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     jvmHost(project(":revanced22-patcher-core", "hostJar"))
     implementation(libs.revanced.patcher.v22) {
         exclude(group = "xmlpull", module = "xmlpull")

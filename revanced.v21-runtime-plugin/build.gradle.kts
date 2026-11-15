@@ -131,6 +131,7 @@ androidComponents {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     jvmHost(project(":revanced21-patcher-core", "hostJar"))
     legacyHost(project(":revanced-legacy-patcher-core", "hostJar"))
     // Kotlin 2.4 metadata requires R8/D8 9.1.29 or newer; Build Tools 36 ships an older compiler.

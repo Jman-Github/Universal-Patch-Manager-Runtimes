@@ -59,7 +59,8 @@ object SplitApkPreparer {
         skipUnneededSplits: Boolean = false,
         onProgress: ((String) -> Unit)? = null,
         onSubSteps: ((List<String>) -> Unit)? = null,
-        sortMergedApkEntries: Boolean = false
+        sortMergedApkEntries: Boolean = false,
+        onStripProgress: ((Int) -> Unit)? = null
     ): PreparationResult {
         if (!isSplitArchive(source)) {
             return PreparationResult(source, merged = false)
@@ -147,7 +148,7 @@ object SplitApkPreparer {
             if (stripNativeLibs) {
                 val finalApk = requireNotNull(mergedApk)
                 onProgress?.invoke("Stripping native libraries")
-                NativeLibStripper.strip(finalApk)
+                NativeLibStripper.strip(finalApk, onProgress = { onStripProgress?.invoke(it) })
                 coroutineContext.ensureActive()
             }
 
