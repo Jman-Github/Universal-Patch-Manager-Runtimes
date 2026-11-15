@@ -1,10 +1,10 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {mkdtempSync, mkdirSync, writeFileSync, rmSync} from "node:fs";
+import {mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join, dirname} from "node:path";
 import {execFileSync} from "node:child_process";
-import {affectsRuntime, releaseConfig} from "./runtime-release-config.mjs";
+import {affectsRuntime, releaseConfig, runtimes, selectedRuntimes} from "./runtime-release-config.mjs";
 import {analyzeCommits, filterCommits} from "./runtime-commits.mjs";
 
 test("configuration matches UPM branches, tags and publication plugins", () => {
@@ -136,4 +136,22 @@ test("shared lines resembling diff headers still release all runtimes", async ()
       await check(save(`fix: update Morphe and remove shared ${statement}`));
     }
   } finally { rmSync(cwd, {recursive:true, force:true}); }
+});
+
+test("matrix jobs select exactly one runtime and reject unknown targets", () => {
+  assert.deepEqual(selectedRuntimes(), Object.keys(runtimes));
+  for (const id of Object.keys(runtimes)) assert.deepEqual(selectedRuntimes(id), [id]);
+  for (const id of ["", "unknown", "constructor", "__proto__"])
+    assert.throws(() => selectedRuntimes(id), /Unknown runtime/);
+});
+
+test("release workflow attempts every runtime serially with independent checkouts", () => {
+  const workflow = readFileSync(new URL("../workflows/release.yml", import.meta.url), "utf8");
+  const ids = workflow.match(/^        runtime: \[([^\]]+)\]$/m)[1].split(",").map(id => id.trim());
+  assert.deepEqual(ids, Object.keys(runtimes));
+  assert.match(workflow, /fail-fast: false/);
+  assert.match(workflow, /max-parallel: 1/);
+  assert(workflow.includes("RUNTIME_ID: ${{ matrix.runtime }}"));
+  assert(workflow.includes("ref: ${{ github.ref_name }}"));
+  assert(workflow.includes("name: runtime-release-${{ matrix.runtime }}"));
 });
