@@ -104,6 +104,7 @@ android {
 
     sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/runtime-plugin/src/main/java").path)
     sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/merger/src/main/java").path)
+    sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/merger-apkeditor/src/main/java").path)
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -131,6 +132,7 @@ androidComponents {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     jvmHost(project(":revanced21-patcher-core", "hostJar"))
     legacyHost(project(":revanced-legacy-patcher-core", "hostJar"))
     // Kotlin 2.4 metadata requires R8/D8 9.1.29 or newer; Build Tools 36 ships an older compiler.

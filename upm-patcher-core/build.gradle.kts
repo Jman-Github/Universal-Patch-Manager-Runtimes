@@ -14,6 +14,7 @@ kotlin {
     sourceSets.main {
         kotlin.srcDir("../morphe-runtime/src/main/java")
         kotlin.srcDir("../shared/merger/src/main/java")
+        kotlin.srcDir("../shared/merger-arsclib/src/main/java")
         kotlin.include(
             "app/universal/patch/manager/morphe/runtime/MorpheRuntimeEntry.kt",
             "app/universal/patch/manager/morphe/runtime/MorpheRuntimeCallback.kt",
@@ -23,6 +24,7 @@ kotlin {
             "app/universal/patch/manager/patcher/split/Merger.kt",
             "app/universal/patch/manager/patcher/split/SplitDexCompression.kt",
             "app/universal/patch/manager/patcher/util/NativeLibStripper.kt",
+            "app/universal/patch/manager/patcher/util/NativeLibRawCopy.kt",
             "app/universal/patch/manager/patcher/util/XmlSurrogateSanitizer.kt",
             "app/universal/patch/manager/patcher/runtime/FrameworkCacheResolver.kt"
         )
@@ -31,6 +33,7 @@ kotlin {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     implementation(project(":jvm-host"))
     implementation(libs.morphe.patcher) {
         exclude(group = "com.github.REAndroid", module = "arsclib")

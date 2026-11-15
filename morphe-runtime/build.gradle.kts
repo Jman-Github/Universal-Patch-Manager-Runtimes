@@ -69,6 +69,7 @@ android {
     }
 
     sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/merger/src/main/java").path)
+    sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/merger-arsclib/src/main/java").path)
     // Share the resource sampler with the host so both process modes report the same metrics.
     sourceSets.named("main") {
         kotlin.directories += "../host-support/src/main/java/app/universal/patch/manager/patcher/runtime/usage"
@@ -95,6 +96,7 @@ kotlin {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     jvmHost(project(":upm-patcher-core", "hostJar"))
     implementation(libs.arsclib)
     implementation(libs.morphe.patcher) {

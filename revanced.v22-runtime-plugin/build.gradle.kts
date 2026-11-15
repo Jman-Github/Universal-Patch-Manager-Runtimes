@@ -94,6 +94,7 @@ android {
     sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/runtime-framework/src/main/java").path)
 
     sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/merger/src/main/java").path)
+    sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/merger-apkeditor/src/main/java").path)
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -120,6 +121,7 @@ androidComponents {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     jvmHost(project(":revanced22-patcher-core", "hostJar"))
     implementation(libs.revanced.patcher.v22) {
         exclude(group = "xmlpull", module = "xmlpull")

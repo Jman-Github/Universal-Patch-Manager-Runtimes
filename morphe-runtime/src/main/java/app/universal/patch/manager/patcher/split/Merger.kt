@@ -10,7 +10,7 @@ import com.reandroid.arsc.chunk.xml.ResXmlElement
 import com.reandroid.arsc.container.SpecTypePair
 import com.reandroid.arsc.header.TableHeader
 import com.reandroid.arsc.model.ResourceEntry
-import com.reandroid.arsc.value.ValueType
+import com.reandroid.arsc.value.DataType
 import java.io.Closeable
 import java.io.File
 import java.io.FileNotFoundException
@@ -302,7 +302,7 @@ internal object Merger {
             .asSequence()
             .firstOrNull()
             ?: return
-        if (valueAttr.valueType != ValueType.REFERENCE) return
+        if (valueAttr.dataType != DataType.REFERENCE) return
 
         val table = module.tableBlock
         val resourceEntry = table.getResource(valueAttr.data) ?: return
@@ -318,7 +318,7 @@ internal object Merger {
         for (entry in resourceEntry) {
             val resEntry = entry ?: continue
             val resValue = resEntry.resValue ?: continue
-            val path = resValue.valueAsString
+            val path = resValue.dataAsString
             if (!path.isNullOrBlank()) {
                 zipEntryMap.remove(path)
                 Log.i("APKEditor", "Removed table entry $path")

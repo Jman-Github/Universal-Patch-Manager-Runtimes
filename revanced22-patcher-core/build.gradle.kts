@@ -11,6 +11,7 @@ kotlin {
         kotlin.srcDir("../shared/runtime-framework/src/main/java")
         kotlin.srcDir("../shared/revanced22/src/main/java")
         kotlin.srcDir("../shared/merger/src/main/java")
+        kotlin.srcDir("../shared/merger-arsclib/src/main/java")
         kotlin.include(
             "app/universal/patch/manager/patcher/aapt/AaptSelector.kt",
             "app/universal/patch/manager/patcher/runtime/FrameworkCacheResolver.kt",
@@ -36,6 +37,7 @@ kotlin {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     implementation(project(":jvm-host"))
     implementation("com.google.guava:guava:33.2.1-jre")
     implementation(libs.revanced.patcher.v22)

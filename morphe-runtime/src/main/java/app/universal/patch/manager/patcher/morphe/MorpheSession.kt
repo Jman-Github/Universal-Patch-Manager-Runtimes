@@ -421,7 +421,12 @@ class MorpheSession(
                 if (shouldStripNativeLibs) {
                     checkCancelled()
                     emitWriteApkProgress("Stripping native libraries")
-                    NativeLibStripper.strip(output, checkCancelled = checkCancelled)
+                    NativeLibStripper.strip(output, onProgress = { percent ->
+                        onEvent(ProgressEvent.Progress(
+                            stepId = StepId.WriteAPK, current = percent.toLong(), total = 100L,
+                            message = "Stripping native libraries"
+                        ))
+                    }, checkCancelled = checkCancelled)
                     checkCancelled()
                 }
             }

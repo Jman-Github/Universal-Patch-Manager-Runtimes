@@ -182,16 +182,13 @@ object ReseamRuntimeEntry {
                     result.forEach { component ->
                         checkCancelled()
                         splitProgress.preparing(component.name, finished = false)
-                        if (stripNativeLibs) NativeLibStripper.strip(component)
                         splitProgress.preparing(component.name, finished = true)
                     }
                 }
                 logger.info("Reseam: patching ${result.size} separate APK components.")
                 splitProgress.completed()
                 result
-            } else listOf(if (stripNativeLibs) {
-                input.copyTo(workspace!!.resolve("base.apk")).also { runBlocking { NativeLibStripper.strip(it) } }
-            } else input)
+            } else listOf(input)
             val signedOutput = workspace!!.resolve(if (components.size > 1) "engine-output" else "engine-output.apk")
             val request = PatchRequest(
                 apkPath = components.first().absolutePath, splitPaths = components.drop(1).map { it.absolutePath },
@@ -204,13 +201,14 @@ object ReseamRuntimeEntry {
                 ),
                 output = if (components.size > 1) PatchOutput.SplitDir(signedOutput.absolutePath)
                     else PatchOutput.SingleFile(signedOutput.absolutePath),
-                // UPM already filters libraries and split modules above. Keep that exact selection.
+                // UPM selects split modules above and trims libraries after patch execution.
+                // Keep the SDK from applying another ABI selection to the patch inputs.
                 deviceAbis = emptyList(),
                 leaveOutFailed = params["continueOnPatchError"] == true
             )
             val events = ReseamProgress(
                 selected.map { it.reference }, selected.map { it.spec.name },
-                params["continueOnPatchError"] == true, callback
+                params["continueOnPatchError"] == true, callback, stripNativeLibs
             )
             progress = events
             logger.info("Reseam storage: input components=${components.sumOf { it.length() }} bytes, " +
@@ -228,8 +226,8 @@ object ReseamRuntimeEntry {
             components.filter { it != input }.forEach { it.delete() }
             val unsignedOutput = workspace!!.resolve("unsigned.apk")
             events.preparingUnsigned(0, components.size)
-            if (components.size > 1) {
-                val unsignedComponents = components.mapIndexed { index, component ->
+            val unsignedComponents = if (components.size > 1) {
+                components.mapIndexed { index, component ->
                     checkCancelled()
                     val signed = signedOutput.resolve(component.name)
                     require(signed.isFile) { "Reseam output is missing ${component.name}." }
@@ -237,15 +235,31 @@ object ReseamRuntimeEntry {
                     events.preparingUnsigned(index + 1, components.size)
                     signed
                 }
-                events.finalizing()
+            } else {
+                ReseamUnsignedApk.stripInPlace(signedOutput)
+                events.preparingUnsigned(1, 1)
+                listOf(signedOutput)
+            }
+            // Keep unsigned conversion and ABI trimming as distinct, ordered UI phases.
+            if (stripNativeLibs) {
+                events.stripping(0, unsignedComponents.size * 100)
+                unsignedComponents.forEachIndexed { index, component ->
+                    checkCancelled()
+                    runBlocking {
+                        NativeLibStripper.strip(component, onProgress = { percent ->
+                            events.stripping(index * 100 + percent, unsignedComponents.size * 100)
+                        }, checkCancelled = ::checkCancelled)
+                    }
+                    events.stripping((index + 1) * 100, unsignedComponents.size * 100)
+                }
+            }
+            events.finalizing()
+            if (unsignedComponents.size > 1) {
                 SplitApkFiles.pack(unsignedComponents, unsignedOutput) { copied, total ->
                     checkCancelled()
                     events.finalizing(copied, total)
                 }
             } else {
-                ReseamUnsignedApk.stripInPlace(signedOutput)
-                events.preparingUnsigned(1, 1)
-                events.finalizing()
                 Files.move(signedOutput.toPath(), unsignedOutput.toPath())
             }
             checkCancelled()

@@ -90,3 +90,16 @@ Build recipes and source references are published in that repository.
 OpenJDK is licensed under GPLv2 with the Classpath Exception. Each linked module's
 legal notices are included in the runtime archive under `legal/`, and OpenJDK
 retains its upstream license and notices.
+
+### JVM startup and AOT cache
+
+UPM adapts the heap and AOT policies from Morphe Manager commits
+[1b670e1](https://github.com/MorpheApp/morphe-manager/commit/1b670e196260774aa0029026f01365192c6fa234),
+[42ddd28](https://github.com/MorpheApp/morphe-manager/commit/42ddd283dc17c44937711dc28a242f5759a6a30b),
+and [ded5f5b](https://github.com/MorpheApp/morphe-manager/commit/ded5f5bcbdb7c47d3dc551a882b4546dcf803b8c).
+
+64-bit workers start with a 512 MB heap and a 2–3 GB ceiling. The manager records a JDK 25 AOT configuration during a successful run, then creates a cache in a separate disposable worker. Cache creation queues ahead of the next JVM run so two large JVM heaps do not compete for memory. Recording and cached runs enable C2; other runs retain C1 tuning. The 32-bit JVM and ART limits are unchanged.
+
+Caches are stored in the manager's cache/jvm-aot, keyed by the installed runtime image and each engine's host identity. At most eight installations are retained. After three failed attempts, that installation runs without AOT. Clearing app cache permits another attempt. Debug JVM overrides bypass caching.
+
+The existing host exits through System.exit after a run, allowing HotSpot to write the recording. The existing launch protocol also permits AOTMode=create to exit before entering main. No runtime protocol or SDK change is required.

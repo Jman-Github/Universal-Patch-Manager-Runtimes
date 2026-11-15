@@ -13,6 +13,7 @@ kotlin {
             "app/universal/patch/manager/revanced/runtime/RevancedPatchMetadata.kt"
         )
         kotlin.srcDir("../shared/merger/src/main/java")
+        kotlin.srcDir("../shared/merger-apkeditor/src/main/java")
         kotlin.srcDir("../shared/runtime-plugin/src/main/java")
         kotlin.include(
             "app/universal/patch/manager/patcher/aapt/AaptSelector.kt",
@@ -34,6 +35,7 @@ kotlin {
 usePatcherClassMergerCompatibility()
 
 dependencies {
+    implementation(libs.apksig)
     testImplementation(kotlin("test-junit"))
     implementation(project(":jvm-host"))
     implementation("com.google.guava:guava:32.1.2-jre")

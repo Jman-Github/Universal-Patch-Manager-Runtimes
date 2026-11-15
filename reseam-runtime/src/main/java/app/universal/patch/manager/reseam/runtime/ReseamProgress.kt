@@ -13,7 +13,8 @@ internal class ReseamProgress(
     private val references: List<String>,
     private val names: List<String>,
     private val continueOnPatchError: Boolean,
-    private val callback: ReseamRuntimeCallback
+    private val callback: ReseamRuntimeCallback,
+    private val stripNativeLibs: Boolean = false
 ) : ClosureRunEvent {
     private val indexes = references.withIndex().associate { it.value to it.index }
     private val completed = mutableSetOf<String>()
@@ -24,6 +25,12 @@ internal class ReseamProgress(
         private set
     private var executing = false
     private var writing = false
+    private val outputSteps = buildList {
+        add("Writing patched APKs")
+        add("Preparing unsigned APKs")
+        if (stripNativeLibs) add("Stripping native libraries")
+        add("Finalizing output")
+    }
 
     fun start() = started("ReadAPK")
 
@@ -41,7 +48,7 @@ internal class ReseamProgress(
         completed("ExecutePatches")
         activeStep = "WriteAPK"
         callback.event(mapOf("type" to "Started", "stepId" to step(activeStep),
-            "subSteps" to listOf("Writing patched APKs", "Preparing unsigned APKs", "Finalizing output")))
+            "subSteps" to outputSteps))
         outputProgress("Writing patched APKs", null, null)
         writing = true
     }
@@ -91,6 +98,14 @@ internal class ReseamProgress(
 
     fun finishPatch(reference: String, status: PatchStatus) {
         val previousStatus = statuses.put(reference, status)
+        if (previousStatus != status) {
+            when (status) {
+                is PatchStatus.Failed -> callback.log("ERROR", "[$reference] " + status.reason)
+                is PatchStatus.Unmountable -> if (reference in indexes) callback.log("ERROR", "[$reference] " + status.reason)
+                is PatchStatus.Skipped -> if (reference in indexes) callback.log("WARN", "[$reference] " + status.reason)
+                PatchStatus.Applied -> Unit
+            }
+        }
         // Individual row failures are nonfatal. Defer the enclosing failure until JNI
         // returns so the SDK can close its files before the host terminates the process.
         indexes[reference]?.let { index ->
@@ -125,6 +140,9 @@ internal class ReseamProgress(
     fun preparingUnsigned(current: Int, total: Int) =
         outputProgress("Preparing unsigned APKs", current.toLong(), total.toLong())
 
+    fun stripping(current: Int, total: Int) =
+        outputProgress("Stripping native libraries", current.toLong(), total.toLong())
+
     fun finalizing(current: Long? = null, total: Long? = null) =
         outputProgress("Finalizing output", current, total)
 
@@ -132,7 +150,7 @@ internal class ReseamProgress(
 
     private fun outputProgress(message: String, current: Long?, total: Long?) = callback.event(mapOf(
         "type" to "Progress", "stepId" to step("WriteAPK"), "message" to message,
-        "current" to current, "total" to total
+        "current" to current, "total" to total, "subSteps" to outputSteps
     ))
 
     private fun started(kind: String, index: Int? = null, updateActive: Boolean = true) {

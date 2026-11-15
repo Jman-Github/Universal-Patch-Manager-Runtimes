@@ -11,8 +11,19 @@ class ReseamProgressTest {
     private class Recorder : ReseamRuntimeCallback {
         val events = mutableListOf<Map<String, Any?>>()
         override fun event(value: Map<String, Any?>) { events += value }
-        override fun log(level: String, message: String) {}
+        val logs = mutableListOf<Pair<String, String>>()
+        override fun log(level: String, message: String) { logs += level to message }
         override fun isCancelled() = false
+    }
+
+    @Test fun failureReasonsReachLogsWithoutDuplicateOrUnselectedNoise() {
+        val recorder = Recorder()
+        val progress = ReseamProgress(listOf("b/a"), listOf("A"), false, recorder)
+        progress.finishPatch("b/unselected", PatchStatus.Skipped("not selected"))
+        progress.finishPatch("b/unselected", PatchStatus.Unmountable("not mountable"))
+        progress.finishPatch("b/a", PatchStatus.Failed("APK manifest could not be read"))
+        progress.finishPatch("b/a", PatchStatus.Failed("APK manifest could not be read"))
+        assertEquals(listOf("ERROR" to "[b/a] APK manifest could not be read"), recorder.logs)
     }
 
     private fun ref(str: String) = if ('/' in str) PatchRef(str.substringBefore('/'), str.substringAfter('/')) else PatchRef("", str)
@@ -229,6 +240,42 @@ class ReseamProgressTest {
         assertFalse(recorder.events.any {
             it["type"] == "Completed" && (it["stepId"] as Map<*, *>)["kind"] == "WriteAPK"
         })
+    }
+
+    @Test fun strippingIsItsOwnOptionalOutputPhase() {
+        for (strip in listOf(false, true)) {
+            val recorder = Recorder()
+            val progress = ReseamProgress(listOf("b/a"), listOf("A"), false, recorder, strip)
+            progress.finishPatch("b/a", PatchStatus.Applied)
+            progress.beforePublish()
+            progress.preparingUnsigned(0, 2)
+            progress.preparingUnsigned(1, 2)
+            progress.preparingUnsigned(2, 2)
+            if (strip) {
+                progress.stripping(0, 200)
+                progress.stripping(25, 200)
+                progress.stripping(100, 200)
+                progress.stripping(175, 200)
+                progress.stripping(200, 200)
+            }
+            progress.finalizing()
+            val started = recorder.events.single {
+                it["type"] == "Started" && (it["stepId"] as Map<*, *>)["kind"] == "WriteAPK"
+            }
+            val titles = started["subSteps"] as List<*>
+            assertEquals(strip, "Stripping native libraries" in titles)
+            val unsigned = recorder.events.filter { it["message"] == "Preparing unsigned APKs" }
+            assertEquals(listOf(0L, 1L, 2L), unsigned.map { it["current"] })
+            assertTrue(unsigned.all { it["total"] == 2L && it["subSteps"] == titles })
+            if (strip) {
+                assertTrue(titles.indexOf("Stripping native libraries") < titles.indexOf("Finalizing output"))
+                val stripping = recorder.events.filter { it["message"] == "Stripping native libraries" }
+                assertEquals(listOf(0L, 25L, 100L, 175L, 200L), stripping.map { it["current"] })
+                assertTrue(stripping.all { it["total"] == 200L && it["subSteps"] == titles })
+            }
+            assertFalse(recorder.events.any { it["type"] == "Completed" &&
+                (it["stepId"] as Map<*, *>)["kind"] == "WriteAPK" })
+        }
     }
 
     @Test fun outputPreparationHasProgressWithoutClaimingPublicationEarly() {
