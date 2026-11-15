@@ -4,10 +4,10 @@ serialization = "1.11.0"
 coroutines = "1.11.0"
 revanced-patcher = "21.1.0-dev.5"
 revanced-patcher-v22 = "22.0.2-dev.1"
-morphe-patcher = "2.3.0"
+morphe-patcher = "2.4.0"
 morphe-library = "1.4.0"
 # Commit hashes are not chronological versions; keep SDK transitives from overriding this pin.
-arsclib = { strictly = "675bed2de3" }
+arsclib = { strictly = "50418a07a8" }
 kotlin = "2.4.10"
 android-gradle-plugin = "9.2.1"
 hidden-api-stub = "4.3.3"

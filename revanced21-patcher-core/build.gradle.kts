@@ -8,6 +8,7 @@ kotlin {
     sourceSets.main {
         kotlin.srcDir("../revanced.v21-runtime-plugin/src/main/java")
         kotlin.srcDir("../shared/merger/src/main/java")
+        kotlin.srcDir("../shared/merger-apkeditor/src/main/java")
         kotlin.srcDir("../shared/runtime-plugin/src/main/java")
         kotlin.include(
             "app/universal/patch/manager/patcher/aapt/AaptSelector.kt",

@@ -10,6 +10,7 @@ kotlin {
         kotlin.srcDir("../host-support/src/main/java")
         kotlin.srcDir("../shared/runtime-framework/src/main/java")
         kotlin.srcDir("../shared/merger/src/main/java")
+        kotlin.srcDir("../shared/merger-arsclib/src/main/java")
         kotlin.include(
             "app/universal/patch/manager/patcher/aapt/AaptSelector.kt",
             "app/universal/patch/manager/patcher/runtime/FrameworkCacheResolver.kt",

@@ -9,9 +9,13 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
+MORPHE_VERSION = tomllib.loads((ROOT / "gradle/libs.versions.toml").read_text(encoding="utf-8"))["versions"]["morphe-patcher"]
+transform = (ROOT / "buildSrc/src/main/kotlin/PatcherClassMergerCompatTransform.kt").read_text(encoding="utf-8")
+assert f'"morphe-patcher-{MORPHE_VERSION}.jar"' in transform, "Current Morphe SDK bypasses the merger compatibility fix"
 CACHE = Path(os.environ.get("GRADLE_USER_HOME", ROOT / ".gradle-user-home")) / "caches/modules-2/files-2.1"
 JAVA_BIN = Path(os.environ.get("JAVA_HOME", r"C:\Program Files\Java\jdk-17")) / "bin"
 JAVA = JAVA_BIN / "java.exe"
@@ -60,7 +64,7 @@ with tempfile.TemporaryDirectory(prefix="extension-member-merge-", dir=ROOT / "b
     subprocess.run([str(JAVAC), "--release", "17", "-cp", fix_cp, "-d", str(fix), str(runner)], check=True)
     template = (ROOT / "tests/fixtures/class-merger/ExtensionMembers.java").read_text()
     for module, group, name, version, patcher, extension in (
-        ("upm-patcher-core", "app.morphe", "morphe-patcher", "2.2.0", "app.morphe.patcher", "jar"),
+        ("upm-patcher-core", "app.morphe", "morphe-patcher", MORPHE_VERSION, "app.morphe.patcher", "jar"),
         ("revanced21-patcher-core", "app.revanced", "revanced-patcher", "21.1.0-dev.5", "app.revanced.patcher", "jar"),
         ("revanced22-patcher-core", "app.revanced", "patcher-jvm", "22.0.2-dev.1", "app.revanced.patcher", "jar"),
         ("revanced22-patcher-core", "app.revanced", "patcher-android", "22.0.2-dev.1", "app.revanced.patcher", "aar"),

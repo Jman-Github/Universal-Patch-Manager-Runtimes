@@ -104,6 +104,7 @@ android {
 
     sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/runtime-plugin/src/main/java").path)
     sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/merger/src/main/java").path)
+    sourceSets.getByName("main").kotlin.directories.add(rootProject.file("shared/merger-apkeditor/src/main/java").path)
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

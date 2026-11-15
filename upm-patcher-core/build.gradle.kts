@@ -14,6 +14,7 @@ kotlin {
     sourceSets.main {
         kotlin.srcDir("../morphe-runtime/src/main/java")
         kotlin.srcDir("../shared/merger/src/main/java")
+        kotlin.srcDir("../shared/merger-arsclib/src/main/java")
         kotlin.include(
             "app/universal/patch/manager/morphe/runtime/MorpheRuntimeEntry.kt",
             "app/universal/patch/manager/morphe/runtime/MorpheRuntimeCallback.kt",
