@@ -1,14 +1,14 @@
 import semanticRelease from "semantic-release";
 import {execFileSync} from "node:child_process";
 import {appendFileSync} from "node:fs";
-import {releaseConfig, runtimes} from "./runtime-release-config.mjs";
+import {releaseConfig, selectedRuntimes} from "./runtime-release-config.mjs";
 import {recoverRuntimeRelease} from "./recover-runtime-release.mjs";
 
 const branch = process.env.GITHUB_REF_NAME;
 if (!["main", "dev"].includes(branch)) throw new Error("Releases must run on main or dev");
 if (process.env.GITHUB_EVENT_NAME === "push" && branch !== "main") throw new Error("Automatic releases require main");
 let count = 0;
-for (const id of Object.keys(runtimes)) {
+for (const id of selectedRuntimes(process.env.RUNTIME_ID)) {
   // Bootstrap each plugin once to publish its initial assets and establish
   // the version tag used by subsequent semantic releases.
   const tags = execFileSync("git", ["tag", "--list", id + "-v*"], {encoding: "utf8"}).trim();

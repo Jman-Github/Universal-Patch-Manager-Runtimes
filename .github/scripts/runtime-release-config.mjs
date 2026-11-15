@@ -6,6 +6,12 @@ export const runtimes = {
   reseam: ["reseam-runtime"],
   "shared-support": ["shared-support", "tools-patcher-core"],
 };
+// Matrix jobs select one runtime; local/manual callers can still release all.
+export function selectedRuntimes(id) {
+  if (id === undefined) return Object.keys(runtimes);
+  if (!Object.hasOwn(runtimes, id)) throw new Error("Unknown runtime: " + id);
+  return [id];
+}
 export const commonPaths = ["buildSrc/", "jvm-host/", "host-support/", "shared/", "gradle/",
   "build.gradle.kts", "settings.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat", "libs/", ".github/scripts/", ".github/workflows/"];
 export const engineDependencyPaths = [
