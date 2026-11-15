@@ -2,6 +2,18 @@
 
 Generated from Conventional Commits affecting this runtime.
 
+## [1.0.3](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/revanced-v21-v1.0.2...revanced-v21-v1.0.3) (2026-11-15)
+
+
+### Bug Fixes
+
+* **runtimes:** update Morphe Patcher to 2.4.0 ([388b6c7](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/commit/388b6c7bd0d37a4422544489d8819b1f818373bc))
+
+
+### Performance Improvements
+
+* **runtimes:** speed up native library stripping ([9222f93](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/commit/9222f93e9eba43a9ec9029b3b5b96dd459db04cd))
+
 ## [1.0.2](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/revanced-v21-v1.0.1...revanced-v21-v1.0.2) (2026-11-11)
 
 
