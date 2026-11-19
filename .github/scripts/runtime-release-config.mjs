@@ -12,8 +12,9 @@ export function selectedRuntimes(id) {
   if (!Object.hasOwn(runtimes, id)) throw new Error("Unknown runtime: " + id);
   return [id];
 }
+// Shared build inputs can affect multiple runtime artifacts.
 export const commonPaths = ["buildSrc/", "jvm-host/", "host-support/", "shared/", "gradle/",
-  "build.gradle.kts", "settings.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat", "libs/", ".github/scripts/", ".github/workflows/"];
+  "build.gradle.kts", "settings.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat", "libs/"];
 export const engineDependencyPaths = [
   "gradle/libs.versions.toml",
   "buildSrc/src/main/kotlin/PatcherClassMergerCompatTransform.kt",

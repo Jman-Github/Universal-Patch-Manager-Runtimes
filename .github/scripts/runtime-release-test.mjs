@@ -33,6 +33,8 @@ test("real git history and UPM's analyzer release only affected runtimes", async
       git("add", "."); git("commit", "-m", message);
       return {hash:git("rev-parse","HEAD"), message};
     };
+    const baseline = commit("docs/README.md", "docs: baseline");
+    git("branch", "ci-only");
     const commits = [
       commit("morphe-runtime/src/Entry.kt", "feat(morphe): add an option"),
       commit("reseam-runtime/src/Entry.kt", "fix(reseam): repair callbacks"),
@@ -49,7 +51,136 @@ test("real git history and UPM's analyzer release only affected runtimes", async
     assert.equal(await analyzeCommits(releaseConfig("morphe").plugins[0][1], {...context,commits:[breaking]}), "major");
     const forced = commit("morphe-runtime/src/Entry.kt", "build(Needs bump): update SDK");
     assert.equal(await analyzeCommits(releaseConfig("morphe").plugins[0][1], {...context,commits:[forced]}), "patch");
+
+    git("checkout", "ci-only");
+    const workflow = commit(".github/workflows/build.yml", "fix(ci): retry runtime builds");
+    const script = commit(".github/scripts/assemble-release.sh", "fix(reseam): retry Gradle downloads");
+    git("checkout", "main");
+    const mergeMessage = "fix(ci): merge build automation";
+    git("merge", "--no-ff", "ci-only", "-m", mergeMessage);
+    const merge = {hash:git("rev-parse", "HEAD"), message:mergeMessage};
+    git("tag", "reseam-v1.0.0");
+    git("checkout", "ci-only");
+    const followup = commit(".github/workflows/release.yml", "fix(ci): update release automation");
+    const syncMessage = "fix(ci): sync release branch";
+    git("merge", "--no-ff", "main", "-m", syncMessage);
+    const sync = {hash:git("rev-parse", "HEAD"), message:syncMessage};
+    git("checkout", "main");
+    git("merge", "--no-ff", "ci-only", "-m", "chore: merge CI followup");
+
+    git("checkout", "-b", "stale-ci", baseline.hash);
+    git("merge", "--no-ff", "main", "-m", syncMessage);
+    const staleSync = {hash:git("rev-parse", "HEAD"), message:syncMessage};
+    git("checkout", "main");
+    git("merge", "--no-ff", "stale-ci", "-m", "chore: merge branch sync");
+
+    const ciOnly = {...context, commits:[workflow, script, merge, followup, sync, staleSync]};
+    assert.deepEqual(filterCommits("reseam", ciOnly), []);
+    for (const id of Object.keys(runtimes)) {
+      assert.equal(await analyzeCommits(releaseConfig(id).plugins[0][1], ciOnly), null, id);
+    }
+
+    writeFileSync(join(cwd, ".github/workflows/build.yml"), "update review build");
+    const mixed = commit("reseam-runtime/build.gradle.kts", "fix(ci): update ReSeam SDK and review build");
+    for (const id of Object.keys(runtimes)) {
+      assert.equal(await analyzeCommits(releaseConfig(id).plugins[0][1], {...context, commits:[mixed]}),
+        id === "reseam" ? "patch" : null, id);
+    }
+
+    git("branch", "ci-from-topic");
+    git("branch", "released-options");
+    git("checkout", "-b", "released-topic");
+    commit("reseam-runtime/src/Entry.kt", "fix(reseam): repair session loading");
+    git("checkout", "main");
+    git("merge", "--no-ff", "released-topic", "-m", "chore: merge ReSeam fix");
+    git("checkout", "released-options");
+    commit("reseam-runtime/src/Options.kt", "fix(reseam): restore option defaults");
+    git("checkout", "main");
+    git("merge", "--no-ff", "released-options", "-m", "chore: merge ReSeam options");
+    git("tag", "reseam-v1.0.1");
+    git("checkout", "ci-from-topic");
+    commit(".github/workflows/build.yml", "fix(ci): improve build diagnostics");
+    git("merge", "--no-ff", "released-topic", "-m", "fix(ci): sync released code");
+    git("checkout", "main");
+    git("merge", "--no-ff", "ci-from-topic", "-m", "chore: merge diagnostics");
+
+    const lastRelease = {gitHead:git("rev-parse", "reseam-v1.0.1")};
+    const sinceRelease = () => git("log", "--format=%H", lastRelease.gitHead + "..HEAD").split("\n")
+      .map(hash => ({hash, message:git("show", "-s", "--format=%B", hash)}));
+    const analyzeReseam = () => analyzeCommits(releaseConfig("reseam").plugins[0][1],
+      {...context, lastRelease, commits:sinceRelease()});
+    assert.equal(await analyzeReseam(), null, "sync of one previously released topic");
+
+    git("checkout", "-b", "ci-from-two-topics", "released-options");
+    git("merge", "--no-ff", "released-topic", "-m", "feat(ci): sync released topics");
+    commit(".github/workflows/logs.yml", "fix(ci): show build diagnostics on failure");
+    git("checkout", "main");
+    git("merge", "--no-ff", "ci-from-two-topics", "-m", "chore: merge diagnostic logging");
+    assert.equal(await analyzeReseam(), null, "sync of two previously released topics");
+
+    git("checkout", "-b", "merge-with-runtime-rollback", "released-topic");
+    git("merge", "--no-ff", "--no-commit", "released-options");
+    git("restore", "--source=HEAD", "--staged", "--worktree", "--", "reseam-runtime/src/Options.kt");
+    git("commit", "-m", "fix(reseam): roll back option defaults");
+    git("checkout", "main");
+    git("merge", "--no-ff", "merge-with-runtime-rollback", "-m", "chore: merge option rollback");
+    assert.equal(await analyzeReseam(), "patch", "intentional merge rollback to a parent's contents");
+
+    commit("reseam-runtime/src/Entry.kt", "fix(reseam): handle a missing session");
+    assert.equal(await analyzeReseam(), "patch", "new runtime change after a CI sync");
+
+    git("checkout", "-b", "merge-with-runtime-edit", "released-options");
+    git("merge", "--no-ff", "--no-commit", "released-topic");
+    const mergeEdit = commit("reseam-runtime/src/Session.kt", "feat(reseam): add session validation");
+    git("checkout", "main");
+    git("merge", "--no-ff", "merge-with-runtime-edit", "-m", "chore: merge session validation");
+    assert(filterCommits("reseam", {...context, lastRelease, commits:sinceRelease()})
+      .some(commit => commit.hash === mergeEdit.hash));
+    assert.equal(await analyzeReseam(), "minor", "new runtime code written during a merge");
   } finally { rmSync(cwd, {recursive:true,force:true}); }
+});
+
+test("a cherry-picked fix with identical runtime inputs does not bump the version", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "upm-runtime-cherry-pick-"));
+  const git = (...args) => execFileSync("git", args, {cwd, encoding:"utf8"}).trim();
+  const entry = "reseam-runtime/src/Entry.kt";
+  const workflow = ".github/workflows/build.yml";
+  const write = (path, content) => {
+    mkdirSync(dirname(join(cwd, path)), {recursive:true});
+    writeFileSync(join(cwd, path), content);
+  };
+  const commit = (path, content, message) => {
+    write(path, content);
+    git("add", "--", path);
+    git("commit", "-m", message);
+    return git("rev-parse", "HEAD");
+  };
+  try {
+    git("init", "-b", "main");
+    git("config", "user.name", "Fixture");
+    git("config", "user.email", "fixture@example.invalid");
+    commit(entry, "original", "chore: baseline");
+    git("branch", "ci");
+    const publishedFix = commit(entry, "fixed", "fix(reseam): handle missing settings");
+    git("tag", "reseam-v1.0.0");
+
+    git("checkout", "ci");
+    commit(workflow, "retry the build", "fix(ci): retry workflow");
+    git("cherry-pick", publishedFix);
+    git("checkout", "main");
+    git("merge", "--no-ff", "ci", "-m", "chore: merge CI fix");
+
+    const config = releaseConfig("reseam").plugins[0][1];
+    const analyzeHead = () => analyzeCommits(config, {
+      cwd, logger: {log() {}}, options: {}, lastRelease: {gitHead: publishedFix},
+      commits: git("log", "--format=%H", publishedFix + "..HEAD").split("\n")
+        .map(hash => ({hash, message: git("show", "-s", "--format=%B", hash)})),
+    });
+    assert.equal(git("diff", "--name-only", publishedFix, "HEAD"), workflow);
+    assert.equal(await analyzeHead(), null);
+    commit(entry, "additional fix", "fix(reseam): preserve the selected settings");
+    assert.equal(await analyzeHead(), "patch");
+  } finally { rmSync(cwd, {recursive:true, force:true}); }
 });
 
 test("SDK updates in shared build files release only their engines", async () => {
