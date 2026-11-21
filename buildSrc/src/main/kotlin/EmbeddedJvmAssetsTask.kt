@@ -48,6 +48,9 @@ abstract class EmbeddedJvmAssetsTask : DefaultTask() {
     @get:PathSensitive(PathSensitivity.NAME_ONLY)
     abstract val hostJar: ConfigurableFileCollection
 
+    @get:Input
+    abstract val runtimeDirectory: Property<String>
+
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
 
@@ -58,7 +61,8 @@ abstract class EmbeddedJvmAssetsTask : DefaultTask() {
             mkdirs()
         }
 
-        runtimes.forEach { it.copyTo(assets.resolve(it.name)) }
+        val runtimeAssets = assets.resolve(runtimeDirectory.get()).apply { mkdirs() }
+        runtimes.forEach { it.copyTo(runtimeAssets.resolve(it.name)) }
 
         val imagesByAbi = images.associateBy { it.name.substringBefore('.') }
         val base = imagesByAbi[baseAbi.get()]?.readBytes()

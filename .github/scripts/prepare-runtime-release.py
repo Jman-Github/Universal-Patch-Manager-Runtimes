@@ -36,7 +36,12 @@ def prepare(runtime_id, tag, tools):
             if not abis: raise ValueError("Missing Reseam native SDK")
         elif runtime_id=="shared-support":
             modes=["support"]
-            if not {"assets/jvm/modules.xz","assets/jvm/tools-patcher-core.jar"} <= names:
+            support_payload = {"assets/jvm/modules.xz", "assets/jvm/tools-patcher-core.jar"}
+            support_payload.update(
+                f"assets/jvm/liberica-gpkg-2/{abi}.zip.xz"
+                for abi in ("arm64-v8a", "armeabi-v7a", "x86_64")
+            )
+            if not support_payload <= names:
                 raise ValueError("Missing support payload")
         else:
             modes+=["jvm"]

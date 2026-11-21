@@ -48,7 +48,8 @@ subprojects {
                         if (project.name == "shared-support") {
                             check(zip.getEntry("assets/jvm/modules.xz") != null)
                             listOf("arm64-v8a", "armeabi-v7a", "x86_64").forEach { abi ->
-                                check(zip.getEntry("assets/jvm/$abi.zip.xz") != null) { "Missing JVM image for $abi" }
+                                val image = "assets/jvm/liberica-gpkg-2/$abi.zip.xz"
+                                check(zip.getEntry(image) != null) { "Missing JVM image at $image" }
                             }
                         } else {
                             check(zip.getEntry("classes.dex") != null) { "Runtime plugin has no ART payload" }

@@ -5,10 +5,12 @@
 
 // Code adapted from Morphe, see third-party/NOTICE for more information.
 // https://github.com/MorpheApp/morphe-manager/pull/1215
+// https://github.com/MorpheApp/morphe-manager/pull/1474
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.file.ArchiveOperations
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileSystemOperations
 import org.gradle.api.file.RegularFileProperty
@@ -16,9 +18,13 @@ import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.jvm.toolchain.JavaLauncher
 import org.gradle.process.ExecOperations
@@ -26,14 +32,12 @@ import org.tukaani.xz.ARM64Options
 import org.tukaani.xz.ARMOptions
 import org.tukaani.xz.FilterOptions
 import org.tukaani.xz.X86Options
-import org.tukaani.xz.XZInputStream
 import java.io.File
-import java.net.URI
-import java.security.MessageDigest
+import java.util.zip.GZIPInputStream
 import javax.inject.Inject
 
 /**
- * Turns an Android build of the JVM into the runtime the app ships for one ABI: the modules the
+ * Turns a Linux build of the JVM into the runtime the app ships for one ABI: the modules the
  * patcher needs linked into a new image, next to the native libraries and configuration of the
  * build, packed into one archive for the app's assets, see [writeXzArchive]. The image is left out
  * of the archive, as [EmbeddedJvmAssetsTask] ships the images of all ABIs as one.
@@ -61,6 +65,14 @@ abstract class PrepareEmbeddedJvmTask : DefaultTask() {
     /** Files and directories taken from the build as they are, relative to its root. */
     @get:Input
     abstract val runtimeFiles: ListProperty<String>
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val additionalFiles: ConfigurableFileCollection
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val stripTool: RegularFileProperty
 
     /** The JDK whose tools link the image, which has to be of the same feature release. */
     @get:Nested
@@ -95,8 +107,7 @@ abstract class PrepareEmbeddedJvmTask : DefaultTask() {
         val jdkBin = jdk.get().metadata.installationPath.asFile.resolve("bin")
         fun tool(name: String) = jdkBin.resolve(name).takeIf { it.exists() }?.path ?: jdkBin.resolve("$name.exe").path
 
-        val build = work.resolve("build")
-        unpack(download(), work, build)
+        val build = unpack(downloadPinned(url.get(), sha256.get(), downloadCache.get().asFile, logger), work)
 
         // The modules as classes and resources, with the module graph and lambda forms the build's
         // own link generated, which a new link generates again
@@ -143,7 +154,14 @@ abstract class PrepareEmbeddedJvmTask : DefaultTask() {
         fileSystem.copy {
             from(linked) { include("release") }
             from(build) { (runtimeFiles.get() + legal).forEach { include(it, "$it/**") } }
+            from(additionalFiles)
             into(image)
+        }
+        check(image.resolve("bin/java").isFile && image.resolve("lib/server/libjvm.so").isFile) {
+            "Missing JVM launcher or server VM for ${targetPlatform.get()}"
+        }
+        image.walkTopDown().filter { it.isFile && it.isElf() }.forEach {
+            run(stripTool.get().asFile.path, "--strip-all", it.path)
         }
         writeXzArchive(
             outputArchive.get().asFile,
@@ -163,33 +181,22 @@ abstract class PrepareEmbeddedJvmTask : DefaultTask() {
         else -> throw GradleException("No branch converter for $platform")
     }
 
-    private fun download(): File {
-        val expected = sha256.get().lowercase()
-        val cached = downloadCache.get().asFile.resolve("$expected.tar.xz")
-        if (cached.exists() && cached.sha256() == expected) return cached
-
-        cached.parentFile.mkdirs()
-        val partial = File(cached.path + ".part")
-        logger.lifecycle("Downloading ${url.get()}")
-        URI(url.get()).toURL().openStream().use { input -> partial.outputStream().use { input.copyTo(it) } }
-
-        val actual = partial.sha256()
-        if (actual != expected) {
-            partial.delete()
-            throw GradleException("${url.get()} has SHA-256 $actual instead of $expected")
-        }
-        if (!partial.renameTo(cached)) throw GradleException("Could not move the download into $cached")
-        return cached
-    }
-
-    private fun unpack(archive: File, work: File, destination: File) {
+    private fun unpack(archive: File, work: File): File {
+        val destination = work.resolve("build")
         val tar = work.resolve("build.tar")
-        XZInputStream(archive.inputStream().buffered()).use { input -> tar.outputStream().use { input.copyTo(it) } }
-        fileSystem.copy {
-            from(archives.tarTree(tar))
-            into(destination)
+        try {
+            GZIPInputStream(archive.inputStream().buffered()).use { input ->
+                tar.outputStream().use { input.copyTo(it) }
+            }
+            fileSystem.copy {
+                from(archives.tarTree(tar))
+                into(destination)
+            }
+        } finally {
+            tar.delete()
         }
-        tar.delete()
+        return destination.listFiles()?.singleOrNull()?.takeIf { it.isDirectory }
+            ?: destination
     }
 
     // The modules jlink resolved, required ones included, as it lists them in the image's release file
@@ -206,22 +213,13 @@ abstract class PrepareEmbeddedJvmTask : DefaultTask() {
         exec.exec { commandLine(*command) }
     }
 
-    private fun File.sha256(): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        inputStream().use { input ->
-            val buffer = ByteArray(1 shl 16)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
+    private fun File.isElf() =
+        inputStream().use { it.readNBytes(ELF_MAGIC.size) }.contentEquals(ELF_MAGIC)
 
     private companion object {
         const val JAVA_BASE = "java.base"
         const val RELEASE_MODULES = "MODULES="
         const val IMAGE_PATH = "lib/modules"
+        val ELF_MAGIC = byteArrayOf(0x7f, 0x45, 0x4c, 0x46)
     }
 }
