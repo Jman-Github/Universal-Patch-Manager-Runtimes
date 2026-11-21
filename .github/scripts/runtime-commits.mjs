@@ -1,7 +1,7 @@
 import {execFileSync} from "node:child_process";
 import {analyzeCommits as analyze} from "@semantic-release/commit-analyzer";
 import {generateNotes as notes} from "@semantic-release/release-notes-generator";
-import {affectsRuntime, engineDependencyPaths} from "./runtime-release-config.mjs";
+import {affectsRuntime, lineScopedPaths} from "./runtime-release-config.mjs";
 
 const diffTree = ["diff-tree", "--root", "--no-renames"];
 
@@ -38,7 +38,7 @@ function changedPaths(cwd, revisions) {
 
 function diffAffectsRuntime(runtime, cwd, revisions, paths) {
   const changedLines = {};
-  for (const path of engineDependencyPaths.filter(path => paths.includes(path))) {
+  for (const path of lineScopedPaths.filter(path => paths.includes(path))) {
     const patch = execFileSync("git", [...diffTree, "-p", "--no-color",
       "--no-ext-diff", "--unified=0", ...revisions, "--", path],
       {cwd}).toString();

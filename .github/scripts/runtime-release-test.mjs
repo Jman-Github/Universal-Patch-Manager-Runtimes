@@ -23,6 +23,52 @@ test("shared code reaches consumers while engine code remains independent", () =
   for (const id of ["morphe", "reseam", "revanced-v21", "revanced-v22", "shared-support"])
     assert(affectsRuntime(id, ["host-support/src/Host.kt"]));
 });
+test("release inputs follow their build consumers", () => {
+  const all = Object.keys(runtimes);
+  const jvmHosts = all.filter(id => id !== "reseam");
+  const buildSrc = "buildSrc/src/main/kotlin/";
+  const catalog = "gradle/libs.versions.toml";
+  const transform = buildSrc + "PatcherClassMergerCompatTransform.kt";
+  const consumers = (paths, lines) => all.filter(id => affectsRuntime(id, paths, lines));
+  const cases = [
+    [buildSrc + "LegacyRuntimeAssetsTask.kt", ["revanced-v21"]],
+    [buildSrc + "ExtensionClassMergerFix.kt", jvmHosts],
+    [transform, jvmHosts],
+    [buildSrc + "PluginJvmHostTask.kt", jvmHosts],
+    [buildSrc + "ShrinkJarTask.kt", jvmHosts],
+    [buildSrc + "XzArchive.kt", ["shared-support"]],
+    ["jvm-host/src/main/kotlin/HostMain.kt", jvmHosts],
+    ["host-support/src/main/java/app/universal/patch/manager/patcher/runtime/usage/CpuUsageSampler.kt", ["morphe"]],
+    ["host-support/src/main/java/app/universal/patch/manager/patcher/split/ApkEditorMergeProcess.java",
+      ["revanced-v22", "shared-support"]],
+    ["shared/revanced22/src/main/java/Entry.kt", ["revanced-v22"]],
+    ["shared/runtime-plugin/src/main/java/Entry.kt", ["revanced-v21", "reseam"]],
+    ["shared/runtime-framework/src/main/java/Framework.kt", ["revanced-v22", "shared-support"]],
+    ["shared/merger-apkeditor/src/main/java/Merger.kt", ["revanced-v21", "revanced-v22", "reseam"]],
+    ["shared/merger-arsclib/src/main/java/Merger.kt", ["revanced-v22", "morphe", "shared-support"]],
+    ["libs/APKEditor-1.4.7.jar", ["revanced-v21", "revanced-v22", "reseam"]],
+    ["shared/merger/src/main/java/Merger.kt", all],
+    ["settings.gradle.kts", all],
+    ["buildSrc/build.gradle.kts", all],
+    [buildSrc + "NewSharedTask.kt", all],
+    ["reseam-runtime/src/test/java/RuntimeTest.kt", []],
+    ["jvm-host/src/test/kotlin/PersistentHostTest.kt", []],
+    ["upm-patcher-core/README.md", []],
+    ["shared-support/CHANGELOG.md", []],
+  ];
+  for (const [path, expected] of cases) assert.deepEqual(consumers([path]), expected, path);
+
+  assert.deepEqual(consumers([catalog], {[catalog]: ['revanced-patcher = "21.1.0"']}), ["revanced-v21"]);
+  assert.deepEqual(consumers([catalog], {[catalog]: ['revanced-patcher-v22 = "22.1.0"']}), ["revanced-v22"]);
+  assert.deepEqual(consumers([catalog], {[catalog]: ['proguard = "7.8.2"']}), jvmHosts);
+  assert.deepEqual(consumers([catalog], {[catalog]: ['arsclib = "abcdef"']}), ["revanced-v22", "morphe", "shared-support"]);
+  assert.deepEqual(consumers([catalog], {[catalog]: ['hidden-api-stub = "4.3.3"']}), ["revanced-v21", "revanced-v22", "morphe"]);
+  assert.deepEqual(consumers([catalog], {[catalog]: ['apksig = "9.0.0"']}), all);
+  assert.deepEqual(consumers([transform], {[transform]: ['"revanced-patcher-21.1.0.jar",', '"patcher-jvm-22.1.0.jar"']}),
+    ["revanced-v21", "revanced-v22"]);
+  assert.deepEqual(consumers([catalog], {[catalog]: ['revanced-patcher = "21.1.0"', 'kotlin = "2.4.21"']}), all);
+});
+
 test("real git history and UPM's analyzer release only affected runtimes", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "upm-runtime-history-"));
   const git = (...args) => execFileSync("git", args, {cwd, encoding:"utf8"}).trim();
@@ -229,11 +275,56 @@ test("SDK updates in shared build files release only their engines", async () =>
     await check([shared], ["morphe", "reseam", "revanced-v21", "revanced-v22", "shared-support"]);
     put(transform, 'val affected = emptySet<String>()\n');
     const logic = save("fix: change shared transform logic");
-    await check([logic], ["morphe", "reseam", "revanced-v21", "revanced-v22", "shared-support"]);
+    await check([logic], ["revanced-v21", "revanced-v22", "morphe", "shared-support"]);
+
+    const originalCheck = '    check(zip.getEntry("assets/jvm/$abi.zip.xz") != null) { "Missing JVM image for $abi" }';
+    const updatedCheck = [
+      '    val image = "assets/jvm/liberica-gpkg-2/$abi.zip.xz"',
+      '    check(zip.getEntry(image) != null) { "Missing JVM image at $image" }',
+    ].join("\n");
+    const rootBuild = check => 'allprojects {}\nif (project.name == "shared-support") {\n' + check + '\n}\n';
+    put("build.gradle.kts", rootBuild(originalCheck));
+    const beforeLiberica = save("chore: establish package verifier");
+    git("checkout", "-b", "liberica");
+    put("build.gradle.kts", rootBuild(updatedCheck));
+    for (const task of ["EmbeddedJvmAssetsTask", "PinnedDownloads", "PrepareEmbeddedJvmTask", "PrepareGlibcTask"]) {
+      put("buildSrc/src/main/kotlin/" + task + ".kt", "// build a shared-support JVM image\n");
+    }
+    put("shared-support/build.gradle.kts", 'val jvm = "Liberica 25"\n');
+    const liberica = save("perf(shared-support): package Liberica 25 with glibc");
+    await check([liberica], ["shared-support"]);
+
+    for (const id of Object.keys(runtimes)) {
+      // A previous engine's tag can predate the shared-support change. Check both
+      // per-commit filtering and the comparison against the published tree.
+      const releaseContext = {
+        ...context, commits: [liberica], lastRelease: {gitHead: beforeLiberica.hash},
+        nextRelease: {gitHead: liberica.hash},
+      };
+      assert.equal(await analyzeCommits(releaseConfig(id).plugins[0][1], releaseContext),
+        id === "shared-support" ? "patch" : null, id);
+    }
+
+    git("checkout", "main");
+    const mergeMessage = "perf: merge Liberica support";
+    git("merge", "--no-ff", "liberica", "-m", mergeMessage);
+    await check([{hash:git("rev-parse", "HEAD"), message:mergeMessage}], ["shared-support"]);
+
+    put("build.gradle.kts", rootBuild(originalCheck).replace("allprojects {}", "allprojects { version = \"2\" }"));
+    await check([save("fix: change support verification and shared Gradle logic")], Object.keys(runtimes));
+
+    put("shared/merger/src/main/java/Merger.kt", "class Merger\n");
+    await check([save("fix: update shared merger")], Object.keys(runtimes));
+    put("jvm-host/src/main/kotlin/HostMain.kt", "fun main() {}\n");
+    await check([save("fix: update JVM host")], ["revanced-v21", "revanced-v22", "morphe", "shared-support"]);
+
+    put("reseam-runtime/src/test/java/RuntimeTest.kt", "class RuntimeTest\n");
+    put("shared-support/CHANGELOG.md", "Release notes\n");
+    await check([save("fix: update regression coverage and release notes")], []);
   } finally { rmSync(cwd, {recursive:true, force:true}); }
 });
 
-test("shared lines resembling diff headers still release all runtimes", async () => {
+test("shared lines resembling diff headers still release all transform consumers", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "upm-shared-diff-history-"));
   const git = (...args) => execFileSync("git", args, {cwd, encoding:"utf8"}).trim();
   const transform = "buildSrc/src/main/kotlin/PatcherClassMergerCompatTransform.kt";
@@ -249,9 +340,10 @@ test("shared lines resembling diff headers still release all runtimes", async ()
   };
   const check = async commit => {
     const context = {cwd, commits:[commit], logger:{log(){}}, options:{}};
-    for (const id of ["morphe", "reseam", "revanced-v21", "revanced-v22", "shared-support"]) {
-      assert.equal(filterCommits(id, context).length, 1, `${id}: ${commit.message}`);
-      assert.equal(await analyzeCommits(releaseConfig(id).plugins[0][1], context), "patch", id);
+    for (const id of Object.keys(runtimes)) {
+      const usesTransform = id !== "reseam";
+      assert.equal(filterCommits(id, context).length, usesTransform ? 1 : 0, `${id}: ${commit.message}`);
+      assert.equal(await analyzeCommits(releaseConfig(id).plugins[0][1], context), usesTransform ? "patch" : null, id);
     }
   };
   try {
