@@ -2,6 +2,13 @@
 
 Generated from Conventional Commits affecting this runtime.
 
+## [1.0.4](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/shared-support-v1.0.3...shared-support-v1.0.4) (2026-11-21)
+
+
+### Performance Improvements
+
+* **shared-support:** package Liberica 25 with glibc ([71ec348](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/commit/71ec3480809ef9de3388d5423e8e705ac3c200d8)), closes [MorpheApp/morphe-manager#1474](https://github.com/MorpheApp/morphe-manager/issues/1474)
+
 ## [1.0.3](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/shared-support-v1.0.2...shared-support-v1.0.3) (2026-11-15)
 
 
