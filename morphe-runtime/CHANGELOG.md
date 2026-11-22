@@ -2,6 +2,13 @@
 
 Generated from Conventional Commits affecting this runtime.
 
+## [1.0.6](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/morphe-v1.0.5...morphe-v1.0.6) (2026-11-22)
+
+
+### Bug Fixes
+
+* **morphe:** expose patch categories ([c5524de](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/commit/c5524de6e8db731babf3ab4f41b1c5294c285033))
+
 ## [1.0.5](https://github.com/Jman-Github/Universal-Patch-Manager-Runtimes/compare/morphe-v1.0.4...morphe-v1.0.5) (2026-11-21)
 
 
