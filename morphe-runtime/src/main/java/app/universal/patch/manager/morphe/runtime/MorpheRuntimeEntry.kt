@@ -378,6 +378,7 @@ object MorpheRuntimeEntry {
         val result = LinkedHashMap<String, Any?>()
         result["name"] = patch.name.orEmpty()
         result["description"] = patch.description
+        result["category"] = patch.category
         result["use"] = patch.default
         result["compatiblePackages"] = patch.compatibility?.map { compatibility ->
             val versions = compatibility.targets
