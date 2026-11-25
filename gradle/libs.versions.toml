@@ -7,7 +7,7 @@ revanced-patcher-v22 = "22.0.2-dev.1"
 morphe-patcher = "2.5.0"
 morphe-library = "1.4.0"
 # Commit hashes are not chronological versions; keep SDK transitives from overriding this pin.
-arsclib = { strictly = "50418a07a8" }
+arsclib = { strictly = "6435903152" }
 kotlin = "2.4.10"
 android-gradle-plugin = "9.2.1"
 hidden-api-stub = "4.3.3"
