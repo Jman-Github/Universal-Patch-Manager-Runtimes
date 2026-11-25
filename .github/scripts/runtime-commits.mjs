@@ -1,7 +1,10 @@
 import {execFileSync} from "node:child_process";
 import {analyzeCommits as analyze} from "@semantic-release/commit-analyzer";
 import {generateNotes as notes} from "@semantic-release/release-notes-generator";
-import {affectsRuntime, lineScopedPaths} from "./runtime-release-config.mjs";
+import {affectsRuntime, lineScopedPaths, runtimes} from "./runtime-release-config.mjs";
+import {
+  buildInputReader, catalogPath, hasRuntimeBuildInputs, isNonReleasePath, unchangedProductionScript,
+} from "./runtime-build-inputs.mjs";
 
 const diffTree = ["diff-tree", "--root", "--no-renames"];
 
@@ -36,9 +39,17 @@ function changedPaths(cwd, revisions) {
     {cwd, encoding: "utf8"}).split("\0").filter(Boolean);
 }
 
-function diffAffectsRuntime(runtime, cwd, revisions, paths) {
+function diffAffectsRuntime(runtime, cwd, revisions, paths, readInputs) {
+  // CI/docs-only commits need no Gradle model. Other paths can belong to a
+  // project reached through a release dependency, including a new project.
+  const [before, after] = paths.some(path => !isNonReleasePath(path)) ?
+    readInputs(revisions) : [];
+  const snapshots = before && after ? [before, after] : [];
+  const relevantPaths = paths.filter(path => !unchangedProductionScript(path, snapshots));
+  const catalogModeled = hasRuntimeBuildInputs(runtime, snapshots);
   const changedLines = {};
-  for (const path of lineScopedPaths.filter(path => paths.includes(path))) {
+  for (const path of relevantPaths.filter(path => lineScopedPaths.includes(path) &&
+      !(catalogModeled && path === catalogPath))) {
     const patch = execFileSync("git", [...diffTree, "-p", "--no-color",
       "--no-ext-diff", "--unified=0", ...revisions, "--", path],
       {cwd}).toString();
@@ -52,10 +63,10 @@ function diffAffectsRuntime(runtime, cwd, revisions, paths) {
     }
     changedLines[path] = lines;
   }
-  return affectsRuntime(runtime, paths, changedLines);
+  return affectsRuntime(runtime, relevantPaths, changedLines, snapshots);
 }
 
-export function filterCommits(runtime, context) {
+export function filterCommits(runtime, context, readInputs = buildInputReader(context.cwd, runtimes)) {
   if (!context.commits.length) return [];
   const comparisons = mergeComparisons(context);
   return context.commits.filter(commit => {
@@ -72,19 +83,20 @@ export function filterCommits(runtime, context) {
       }
       paths = paths.filter(path => mergePaths.has(path));
     }
-    return diffAffectsRuntime(runtime, context.cwd, revisions, paths);
+    return diffAffectsRuntime(runtime, context.cwd, revisions, paths, readInputs);
   });
 }
 export async function analyzeCommits(config, context) {
   const {runtime, analysis} = config;
-  const releaseType = await analyze(analysis, {...context, commits: filterCommits(runtime, context)});
+  const readInputs = buildInputReader(context.cwd, runtimes);
+  const releaseType = await analyze(analysis, {...context, commits: filterCommits(runtime, context, readInputs)});
   const publishedHead = context.lastRelease?.gitHead;
   if (!releaseType || !publishedHead) return releaseType;
 
   // A cherry-pick can replay a release-worthy message with identical runtime inputs.
   const revisions = [publishedHead, context.nextRelease?.gitHead ?? "HEAD"];
   const paths = changedPaths(context.cwd, revisions);
-  return diffAffectsRuntime(runtime, context.cwd, revisions, paths) ? releaseType : null;
+  return diffAffectsRuntime(runtime, context.cwd, revisions, paths, readInputs) ? releaseType : null;
 }
 export async function generateNotes(config, context) {
   return notes({preset: "angular"}, {...context, commits: filterCommits(config.runtime, context)});

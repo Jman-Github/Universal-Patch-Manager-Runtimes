@@ -6,6 +6,7 @@ import {join, dirname} from "node:path";
 import {execFileSync} from "node:child_process";
 import {affectsRuntime, releaseConfig, runtimes, selectedRuntimes} from "./runtime-release-config.mjs";
 import {analyzeCommits, filterCommits} from "./runtime-commits.mjs";
+import {buildInputReader} from "./runtime-build-inputs.mjs";
 
 test("configuration matches UPM branches, tags and publication plugins", () => {
   const config = releaseConfig("morphe");
@@ -48,6 +49,9 @@ test("release inputs follow their build consumers", () => {
     ["shared/merger-arsclib/src/main/java/Merger.kt", ["revanced-v22", "morphe", "shared-support"]],
     ["libs/APKEditor-1.4.7.jar", ["revanced-v21", "revanced-v22", "reseam"]],
     ["shared/merger/src/main/java/Merger.kt", all],
+    ["build.gradle", all],
+    ["build.gradle.kts", all],
+    ["settings.gradle", all],
     ["settings.gradle.kts", all],
     ["buildSrc/build.gradle.kts", all],
     [buildSrc + "NewSharedTask.kt", all],
@@ -242,17 +246,26 @@ test("SDK updates in shared build files release only their engines", async () =>
   };
   const catalog = "gradle/libs.versions.toml";
   const transform = "buildSrc/src/main/kotlin/PatcherClassMergerCompatTransform.kt";
+  const catalogText = (patcher, kotlin) => [
+    "[versions]",
+    'morphe-patcher = "' + patcher + '"',
+    'kotlin = "' + kotlin + '"',
+    "[plugins]",
+    'kotlin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize", version.ref = "kotlin" }',
+  ].join("\n");
+  const reseamBuild = version =>
+    'plugins { alias(libs.plugins.kotlin.parcelize) }\nval reseamSdkVersion = "' + version + '"\n';
   try {
     git("init", "-b", "main");
     git("config", "user.name", "Fixture"); git("config", "user.email", "fixture@example.invalid");
-    put(catalog, '[versions]\nmorphe-patcher = "2.1.0"\nkotlin = "2.4.10"\n');
+    put(catalog, catalogText("2.1.0", "2.4.10"));
     put(transform, 'val affected = setOf(\n    "morphe-patcher-2.1.0.jar",\n)\n');
-    put("reseam-runtime/build.gradle.kts", 'val reseamSdkVersion = "0.37.1"\n');
+    put("reseam-runtime/build.gradle.kts", reseamBuild("0.37.1"));
     save("chore: baseline");
     git("checkout", "-b", "dev");
-    put(catalog, '[versions]\nmorphe-patcher = "2.2.0"\nkotlin = "2.4.10"\n');
+    put(catalog, catalogText("2.2.0", "2.4.10"));
     put(transform, 'val affected = setOf(\n    "morphe-patcher-2.1.0.jar",\n    "morphe-patcher-2.2.0.jar",\n)\n');
-    put("reseam-runtime/build.gradle.kts", 'val reseamSdkVersion = "0.38.0"\n');
+    put("reseam-runtime/build.gradle.kts", reseamBuild("0.38.0"));
     const update = save("fix(runtimes): update ReSeam and Morphe");
     const context = {cwd, commits:[update], logger:{log(){}}, options:{}};
     const check = async (commits, expected) => {
@@ -266,11 +279,11 @@ test("SDK updates in shared build files release only their engines", async () =>
     await check([update], ["morphe", "reseam"]);
     git("checkout", "main"); git("merge", "--no-ff", "dev", "-m", "fix: merge SDK updates");
     await check([{hash:git("rev-parse", "HEAD"), message:"fix: merge SDK updates"}], ["morphe", "reseam"]);
-    put(catalog, '[versions]\nmorphe-patcher = "2.3.0"\nkotlin = "2.4.10"\n');
+    put(catalog, catalogText("2.3.0", "2.4.10"));
     await check([save("fix(morphe): update patcher")], ["morphe"]);
-    put("reseam-runtime/build.gradle.kts", 'val reseamSdkVersion = "0.39.0"\n');
+    put("reseam-runtime/build.gradle.kts", reseamBuild("0.39.0"));
     await check([save("fix(reseam): update SDK")], ["reseam"]);
-    put(catalog, '[versions]\nmorphe-patcher = "2.3.0"\nkotlin = "2.4.21"\n');
+    put(catalog, catalogText("2.3.0", "2.4.21"));
     const shared = save("fix: update shared Kotlin dependency");
     await check([shared], ["morphe", "reseam", "revanced-v21", "revanced-v22", "shared-support"]);
     put(transform, 'val affected = emptySet<String>()\n');
@@ -377,4 +390,413 @@ test("release workflow attempts every runtime serially with independent checkout
   assert(workflow.includes("RUNTIME_ID: ${{ matrix.runtime }}"));
   assert(workflow.includes("ref: ${{ github.ref_name }}"));
   assert(workflow.includes("name: runtime-release-${{ matrix.runtime }}"));
+});
+
+test("release analysis traces catalog and shared inputs through committed Gradle projects", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "upm-build-owners-"));
+  const git = (...args) => execFileSync("git", args, {cwd, encoding: "utf8"}).trim();
+  const put = (file, content) => {
+    mkdirSync(dirname(join(cwd, file)), {recursive: true});
+    writeFileSync(join(cwd, file), content);
+  };
+  const commit = message => {
+    git("add", ".");
+    git("commit", "-m", message);
+    return {hash: git("rev-parse", "HEAD"), message};
+  };
+  const catalog = "gradle/libs.versions.toml";
+  const shared = "shared/new-source/src/main/kotlin/Helper.kt";
+  const vendor = "libs/new-helper.jar";
+  const catalogText = (version, unused, testVersion, groovyVersion = "1") => [
+    "[versions]",
+    'runtime-sdk = { strictly = "' + version + '" }',
+    'unused = "' + unused + '"',
+    'test-sdk = "' + testVersion + '"',
+    "[libraries]",
+    'sdk = { module = "example:sdk", version.ref = "runtime-sdk" }',
+    'test-sdk = { module = "example:test-sdk", version.ref = "test-sdk" }',
+    'groovy-sdk = "example:groovy-sdk:' + groovyVersion + '"',
+    "[bundles]",
+    'sdk-bundle = ["sdk"]',
+  ].join("\n");
+  try {
+    git("init", "-b", "main");
+    git("config", "user.name", "Fixture");
+    git("config", "user.email", "fixture@example.invalid");
+    for (const [id, [module]] of Object.entries(runtimes)) {
+      if (id !== "revanced-v21") put(module + "/build.gradle.kts", "// Runtime");
+    }
+    put("morphe-runtime/build.gradle.kts", 'dependencies { jvmHost(project(":custom-host", "hostJar")) }');
+    put("revanced.v22-runtime-plugin/build.gradle.kts", 'dependencies { jvmHost(project(":custom-host", "hostJar")) }');
+    put("custom-host/build.gradle.kts", [
+      'dependencies { implementation(project(path = ":helpers:library-consumer")) }',
+      'kotlin.srcDir("../shared/new-source/src/main/kotlin")',
+      'dependencies { implementation(files("../libs/new-helper.jar")) }',
+    ].join("\n"));
+    put("helpers/library-consumer/build.gradle.kts", "dependencies { implementation(libs.bundles.sdk.bundle) }");
+    put("shared-support/build.gradle.kts", 'dependencies { implementation(project(":helpers:groovy-consumer")) }');
+    put("helpers/groovy-consumer/build.gradle", [
+      "/* A block comment mentioning its opener /* inline */",
+      "dependencies { implementation(libs.groovy.sdk) }",
+      'dependencies { testImplementation("example:groovy-test:1") }',
+    ].join("\n"));
+    put("reseam-runtime/build.gradle.kts", [
+      "// dependencies { implementation(libs.bundles.sdk.bundle) }",
+      "/* An outer comment /* with an inner note */",
+      "   implementation(libs.test.sdk)",
+      "*/",
+      "dependencies {",
+      "    testImplementation(libs.test.sdk)",
+      '    testRuntimeOnly("example:test-runner:1")',
+      "}",
+    ].join("\n"));
+    put("tests/fixtures/example/settings.gradle.kts", "val sdk = libs.test.sdk");
+    put(catalog, catalogText("1", "1", "1"));
+    const baseline = commit("chore: fixture");
+
+    put(catalog, catalogText("2", "1", "1"));
+    const bump = commit("fix: bump SDK");
+    put(catalog, "# Catalog\n" + catalogText("2", "2", "2"));
+    const testAndUnused = commit("fix: update test and unused dependency");
+    const reseamBuild = "reseam-runtime/build.gradle.kts";
+    put(reseamBuild, readFileSync(join(cwd, reseamBuild), "utf8").replace("test-runner:1", "test-runner:2"));
+    const testBuild = commit("fix: update inline test dependency");
+    put(shared, "new shared code");
+    put(vendor, "new vendored dependency");
+    put("helpers/library-consumer/src/main/kotlin/Entry.kt", "new host dependency code");
+    const hostChange = commit("fix: update host inputs");
+    const nestedTest = "helpers/library-consumer/src/test/kotlin/EntryTest.kt";
+    const nestedReadme = "helpers/library-consumer/README.md";
+    put(nestedTest, "test cases");
+    put(nestedReadme, "test instructions");
+    const tests = commit("fix: update host test cases and docs");
+    const groovyBuild = "helpers/groovy-consumer/build.gradle";
+    put(groovyBuild, readFileSync(join(cwd, groovyBuild), "utf8").replace("groovy-test:1", "groovy-test:2"));
+    const groovyTest = commit("fix: bump Groovy module test dependency");
+    put("revanced.v21-runtime-plugin/build.gradle.kts", "// Add another runtime after the SDK bump");
+    const addedRuntime = commit("feat: add another runtime");
+
+    const readInputs = buildInputReader(cwd, runtimes);
+    const impacts = (before, after, paths) => {
+      const snapshots = readInputs([before.hash, after.hash]);
+      assert(snapshots.every(Boolean), "expected a complete Gradle fixture");
+      return Object.keys(runtimes).filter(id =>
+        snapshots.every(snapshot => snapshot.consumers.has(id)) && affectsRuntime(id, paths, {}, snapshots));
+    };
+    const expected = ["revanced-v22", "morphe"];
+    const sdkHistory = {cwd, commits: [bump]};
+    assert.deepEqual(["revanced-v22", "morphe", "reseam"].map(id =>
+      filterCommits(id, sdkHistory).map(({hash}) => hash)), [[bump.hash], [bump.hash], []]);
+    const withNewRuntime = {cwd, lastRelease: {gitHead: baseline.hash}, nextRelease: {gitHead: addedRuntime.hash},
+      commits: [addedRuntime, bump]};
+    assert.deepEqual(filterCommits("morphe", withNewRuntime), [bump]);
+    assert.deepEqual(filterCommits("reseam", withNewRuntime), []);
+    assert.deepEqual(impacts(baseline, bump, [catalog]), expected);
+    assert.deepEqual({
+      catalog: impacts(bump, testAndUnused, [catalog]),
+      tests: impacts(hostChange, tests, [nestedTest]),
+      docs: impacts(hostChange, tests, [nestedReadme]),
+      productionResource: impacts(hostChange, tests,
+        ["helpers/library-consumer/src/main/resources/example/src/test/value.txt"]),
+      history: filterCommits("morphe", {cwd, commits: [tests]}).map(({hash}) => hash),
+      groovyTest: filterCommits("shared-support", {cwd, commits: [groovyTest]}).map(({hash}) => hash),
+    }, {catalog: [], tests: [], docs: [], productionResource: expected, history: [], groovyTest: []});
+    for (const file of [shared, vendor, "helpers/library-consumer/src/main/kotlin/Entry.kt"]) {
+      assert.deepEqual(impacts(testBuild, hostChange, [file]), expected, file);
+    }
+
+    const context = {cwd, logger: {log() {}}, options: {}, lastRelease: {gitHead: baseline.hash},
+      nextRelease: {gitHead: addedRuntime.hash}, commits: [addedRuntime, hostChange, testBuild, testAndUnused, bump]};
+    assert.deepEqual(filterCommits("morphe", context).map(({hash}) => hash), [hostChange.hash, bump.hash]);
+    assert.deepEqual(filterCommits("reseam", context), []);
+    assert.deepEqual(filterCommits("revanced-v21", {cwd, commits: [addedRuntime]}), [addedRuntime]);
+    assert.equal(await analyzeCommits(releaseConfig("morphe").plugins[0][1], context), "patch");
+
+    put("helpers/library-consumer/build.gradle.kts", "// SDK removed");
+    put(catalog, catalogText("3", "2", "2"));
+    const removed = commit("fix: remove SDK");
+    assert.deepEqual(impacts(hostChange, removed, [catalog]), expected);
+
+    put("reseam-runtime/build.gradle.kts", 'dependencies { implementation(libs.findLibrary(aliasName).get()) }');
+    const dynamic = commit("chore: use dynamic dependency lookup");
+    put(catalog, catalogText("4", "2", "2"));
+    const dynamicBump = commit("fix: update dynamic dependency");
+    assert.deepEqual(impacts(dynamic, dynamicBump, [catalog]), ["reseam"]);
+
+    put(catalog, "[versions");
+    const invalid = commit("chore: incomplete catalog");
+    put(catalog, catalogText("4", "2", "2"));
+    const repaired = commit("fix: restore valid catalog");
+    assert.deepEqual(impacts(invalid, repaired, [catalog]), Object.keys(runtimes));
+
+    put("build.gradle.kts", 'subprojects { dependencies { add("implementation", project(":helpers:library-consumer")) } }');
+    put("helpers/library-consumer/build.gradle.kts", "dependencies { implementation(libs.bundles.sdk.bundle) }");
+    put("reseam-runtime/build.gradle.kts", "// No direct SDK dependency");
+    const common = commit("chore: use SDK through root project wiring");
+    put(catalog, catalogText("5", "2", "2"));
+    const commonBump = commit("fix: bump shared SDK");
+    assert.deepEqual(impacts(common, commonBump, [catalog]), Object.keys(runtimes));
+    put(catalog, catalogText("5", "2", "2", "2"));
+    const groovyBump = commit("fix: bump SDK used in Groovy script");
+    assert.deepEqual(impacts(commonBump, groovyBump, [catalog]), ["shared-support"]);
+  } finally { rmSync(cwd, {recursive: true, force: true}); }
+});
+
+test("release ownership includes interpolated versions, later file arguments, and uncertain project links", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "upm-release-inputs-"));
+  const git = (...args) => execFileSync("git", args, {cwd, encoding: "utf8"}).trim();
+  const put = (file, content) => {
+    mkdirSync(dirname(join(cwd, file)), {recursive: true});
+    writeFileSync(join(cwd, file), content);
+  };
+  const save = message => {
+    git("add", ".");
+    git("commit", "-m", message);
+    return git("rev-parse", "HEAD");
+  };
+  const catalog = "gradle/libs.versions.toml";
+  const vendor = "libs/runtime.jar";
+  const source = "shared/imported/src/main/kotlin/Entry.kt";
+  const externalJar = "vendor/engine.jar";
+  const groovyJar = "vendor/groovy.jar";
+  const externalSource = "included-source/bridge/Bridge.kt";
+  const helper = "optional-host/src/main/kotlin/Host.kt";
+  try {
+    git("init", "-b", "main");
+    git("config", "user.name", "Fixture");
+    git("config", "user.email", "fixture@example.invalid");
+    for (const [module] of Object.values(runtimes)) {
+      if (module !== "shared-support") put(module + "/build.gradle.kts", "// Runtime");
+    }
+    put("shared-support/build.gradle", [
+      "plugins { id 'example.plugin' }",
+      "dependencies { implementation(files('../vendor/groovy.jar')) }",
+      "dependencies { implementation(project(':morphe-runtime:helper')) }",
+      "def example = '${libs.versions.engine.get()}'",
+    ].join("\n"));
+    put("morphe-runtime/build.gradle.kts", [
+      'implementation("example:engine:${libs.versions.engine.get()}")',
+      'implementation(files("../libs/runtime.jar"))',
+      'implementation(files(rootProject.file("vendor/engine.jar")))',
+      'implementation(files("../vendor/computed" + artifactSuffix))',
+      'kotlin.srcDir("../shared/imported/src/main/kotlin")',
+    ].join("\n"));
+    put("revanced.v22-runtime-plugin/build.gradle.kts", [
+      'implementation(files("../libs/first.jar", "../libs/runtime.jar"))',
+      'kotlin.srcDirs("../shared/first/src/main/kotlin", "../shared/imported/src/main/kotlin")',
+      'kotlin.srcDir("../included-source/bridge")',
+      'val evaluatedVersion = "${versionCatalogs.named("libs").findVersion("template").get()}"',
+    ].join("\n"));
+    put("build.gradle.kts", "plugins { alias(libs.plugins.example) apply false }");
+    put("morphe-runtime/helper/build.gradle.kts", 'sourceSets.main { kotlin.srcDir("../../optional-host/src/test/kotlin") }');
+    put("optional-host/build.gradle.kts", "// Optional host");
+    put("reseam-runtime/build.gradle.kts", [
+      'val projectExample = """project(":optional-host")"""',
+      'val lookupExample = """findVersion("engine")"""',
+      'val dynamicExample = """findLibrary(aliasName)"""',
+      'val pluginExample = """id("example.plugin")"""',
+    ].join("\n"));
+    const catalogText = (engine, template) => [
+      "[versions]",
+      'engine = "' + engine + '"',
+      'template = "' + template + '"',
+      "[plugins]",
+      'example = { id = "example.plugin", version.ref = "engine" }',
+    ].join("\n");
+    put(catalog, catalogText("1", "1"));
+    const baseline = save("chore: fixture");
+    put(catalog, catalogText("2", "1"));
+    put(vendor, "updated dependency");
+    put(source, "updated source");
+    put(externalJar, "updated runtime jar");
+    put(groovyJar, "updated groovy jar");
+    put(externalSource, "updated bridge");
+    const update = save("fix: update dependencies and sources");
+    put(catalog, catalogText("2", "2"));
+    const templateUpdate = save("fix: update dependency used in a string expression");
+    put("reseam-runtime/build.gradle.kts", "implementation(project(hostProjectPath))");
+    const dynamic = save("chore: configure host by name");
+    put(helper, "updated host source");
+    const dynamicUpdate = save("fix: update optional host");
+
+    const read = buildInputReader(cwd, runtimes);
+    const ids = Object.keys(runtimes);
+    const owners = (file, snapshots) => ids.filter(id => affectsRuntime(id, [file], {}, snapshots));
+    // Both ":optional" and ":optional-host" exist. A computed path can select the latter.
+    put("optional/build.gradle.kts", "// Optional base");
+    put("reseam-runtime/build.gradle.kts", 'implementation(project(":optional" + hostSuffix))');
+    const computedPath = save("chore: compute host project path");
+    assert.deepEqual(owners(helper, read([computedPath, computedPath])), ["reseam"]);
+
+    const updateInputs = read([baseline, update]);
+    assert.deepEqual({
+      catalog: owners(catalog, updateInputs),
+      vendor: owners(vendor, updateInputs),
+      source: owners(source, updateInputs),
+      externalJar: owners(externalJar, updateInputs),
+      groovyJar: owners(groovyJar, updateInputs),
+      nestedModule: owners("morphe-runtime/helper/src/main/kotlin/Helper.kt", updateInputs),
+      packagedTestSource: owners("optional-host/src/test/kotlin/Fixture.kt", updateInputs),
+      externalSource: owners(externalSource, updateInputs),
+      computedPrefix: owners("vendor/computed", updateInputs),
+      quotedProject: owners(helper, updateInputs),
+      evaluatedLookup: owners(catalog, read([update, templateUpdate])),
+      dynamic: owners(helper, read([dynamic, dynamicUpdate])),
+    }, {
+      catalog: ["morphe", "shared-support"],
+      vendor: ["revanced-v22", "morphe"],
+      source: ["revanced-v22", "morphe"],
+      externalJar: ["morphe"],
+      groovyJar: ["shared-support"],
+      nestedModule: ["shared-support"],
+      packagedTestSource: ["shared-support"],
+      externalSource: ["revanced-v22"],
+      computedPrefix: [],
+      quotedProject: [],
+      evaluatedLookup: ["revanced-v22"],
+      dynamic: ["reseam"],
+    });
+  } finally { rmSync(cwd, {recursive: true, force: true}); }
+});
+
+test("wrapped and multiline test dependencies do not make a runtime release", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "upm-test-dependencies-"));
+  const git = (...args) => execFileSync("git", args, {cwd, encoding: "utf8"}).trim();
+  const put = (file, content) => {
+    mkdirSync(dirname(join(cwd, file)), {recursive: true});
+    writeFileSync(join(cwd, file), content);
+  };
+  const save = message => {
+    git("add", ".");
+    git("commit", "-m", message);
+    return {hash: git("rev-parse", "HEAD"), message};
+  };
+  const catalog = "gradle/libs.versions.toml";
+  const build = "reseam-runtime/build.gradle.kts";
+  const vendor = "libs/test-runner.jar";
+  const shared = "libs/shared-runner.jar";
+  const helper = "test-helper/src/main/kotlin/Helper.kt";
+  const catalogText = version => '[libraries]\ntest-bom = "example:test-bom:' + version + '"\n';
+  const buildText = version => [
+    "dependencies {",
+    "    testImplementation(platform(libs.test.bom)) /* This catalog entry is for tests.",
+    "    implementation(libs.test.bom) would make it a production dependency. */",
+    '    testImplementation(project(path = ":test-helper"))',
+    '    testRuntimeOnly(files("../libs/test-runner.jar", "../libs/shared-runner.jar"))',
+    "    testRuntimeOnly(",
+    '        "example:test-runner:' + version + '"',
+    "    )",
+    "}",
+  ].join("\n");
+  try {
+    git("init", "-b", "main");
+    git("config", "user.name", "Fixture");
+    git("config", "user.email", "fixture@example.invalid");
+    for (const [module] of Object.values(runtimes)) put(module + "/build.gradle.kts", "// Runtime");
+    put(build, buildText("1"));
+    put("morphe-runtime/build.gradle.kts", 'implementation(files("../libs/shared-runner.jar"))');
+    put("test-helper/build.gradle.kts", "// Helper");
+    put(catalog, catalogText("1"));
+    const baseline = save("chore: fixture");
+    put(catalog, catalogText("2"));
+    put(vendor, "test artifact");
+    put(shared, "shared artifact");
+    put(helper, "test code");
+    const bump = save("fix: update test inputs");
+    put(build, buildText("2"));
+    const buildOnly = save("fix: update multiline test dependency");
+
+    const generated = version => buildText("2") + '\nval generatedScript = """\n' +
+      '    testImplementation("example:generated:' + version + '")\n    """.trimIndent()\n' +
+      'android { defaultConfig { manifestPlaceholders["runtimePayload"] = generatedScript } }\n';
+    put(build, generated("1"));
+    save("chore: generate runtime resource");
+    put(build, generated("2"));
+    const payload = save("fix: update generated runtime resource");
+
+    const snapshots = buildInputReader(cwd, runtimes)([baseline.hash, bump.hash]);
+    const owners = file => Object.keys(runtimes).filter(id => affectsRuntime(id, [file], {}, snapshots));
+    assert.deepEqual({
+      catalog: owners(catalog),
+      vendor: owners(vendor),
+      shared: owners(shared),
+      helper: owners(helper),
+      build: filterCommits("reseam", {cwd, commits: [buildOnly]}).map(({hash}) => hash),
+      payload: filterCommits("reseam", {cwd, commits: [payload]}).map(({hash}) => hash),
+    }, {catalog: [], vendor: [], shared: ["morphe"], helper: [], build: [], payload: [payload.hash]});
+
+    const configured = version => 'dependencies {\n' +
+      '    val dependency = testImplementation("example:dual-use:' + version + '")\n' +
+      '    implementation("example:runtime:" + checkNotNull(dependency).version)\n}\n';
+    put(build, configured("1"));
+    save("chore: configure a runtime dependency using the test declaration");
+    put(build, configured("2"));
+    const dependencyValue = save("fix: update derived runtime dependency");
+    assert.deepEqual(filterCommits("reseam", {cwd, commits: [dependencyValue]}), [dependencyValue]);
+
+    put(build, buildText("3") + '\nimplementation("example:runtime:1")\n');
+    const mixed = save("fix: update runtime and test dependency together");
+    assert.deepEqual(filterCommits("reseam", {cwd, commits: [mixed]}), [mixed]);
+
+    put("shared-support/build.gradle.kts", "implementation(project(optionalPath))");
+    const dynamic = save("chore: select optional project dynamically");
+    put(vendor, "replacement test artifact");
+    const testOnly = save("fix: replace test artifact");
+    const dynamicInputs = buildInputReader(cwd, runtimes)([dynamic.hash, testOnly.hash]);
+    assert.deepEqual(Object.keys(runtimes).filter(id => affectsRuntime(id, [vendor], {}, dynamicInputs)), []);
+
+    const variantInputs = version => [
+      "dependencies {",
+      '    testDebugImplementation("example:unit:' + version + '")',
+      '    androidTestReleaseImplementation("example:instrumented:' + version + '")',
+      "}",
+    ].join("\n");
+    put(build, variantInputs("1"));
+    save("chore: configure Android variant tests");
+    put(build, variantInputs("2"));
+    const variantBump = save("fix: update Android variant test dependencies");
+    assert.deepEqual(filterCommits("reseam", {cwd, commits: [variantBump]}), []);
+
+    put(build, 'testFixturesApi("example:fixtures:1")');
+    save("chore: publish test fixtures");
+    put(build, 'testFixturesApi("example:fixtures:2")');
+    const fixturesBump = save("fix: update published test fixtures");
+    assert.deepEqual(filterCommits("reseam", {cwd, commits: [fixturesBump]}), [fixturesBump]);
+
+    const packaging = [
+      'val bundled by configurations.creating {',
+      '    extendsFrom(configurations.testRuntimeOnly.get(), configurations["testImplementation"])',
+      '}',
+      'tasks.named<Jar>("jar") { from(bundled) }',
+    ].join("\n");
+    put(build, buildText("3") + "\n" + packaging);
+    const beforePackagingBump = save("chore: bundle dependencies from two configurations");
+    put(build, buildText("4") + "\n" + packaging);
+    const inlineBump = save("fix: bump bundled dependency in the build script");
+    put(catalog, catalogText("3"));
+    put(vendor, "replacement bundled artifact");
+    const bundledBump = save("fix: bump bundled dependencies");
+
+    const wiring = 'configurations { named("runtimeClasspath") { extendsFrom(getByName("testRuntimeOnly")) } }';
+    put(build, buildText("4") + "\n" + wiring);
+    save("chore: reuse a test configuration inside its container");
+    put(build, buildText("5") + "\n" + wiring);
+    const localReuse = save("fix: update dependency inherited by the runtime classpath");
+    assert.deepEqual(filterCommits("reseam", {cwd, commits: [localReuse]}), [localReuse]);
+
+    put(build, buildText("5"));
+    put("build.gradle.kts", "subprojects {\n" + wiring + "\n}");
+    save("chore: share runtime classpath configuration across subprojects");
+    put(build, buildText("6"));
+    const sharedReuse = save("fix: update dependency inherited through root project configuration");
+    assert.deepEqual(filterCommits("reseam", {cwd, commits: [sharedReuse]}), [sharedReuse]);
+
+    const bundledInputs = buildInputReader(cwd, runtimes)([beforePackagingBump.hash, bundledBump.hash]);
+    const bundledOwners = file => Object.keys(runtimes).filter(id => affectsRuntime(id, [file], {}, bundledInputs));
+    assert.deepEqual({
+      catalog: bundledOwners(catalog),
+      vendor: bundledOwners(vendor),
+      inline: filterCommits("reseam", {cwd, commits: [inlineBump]}),
+    }, {catalog: ["reseam", "shared-support"], vendor: ["reseam", "shared-support"], inline: [inlineBump]});
+  } finally { rmSync(cwd, {recursive: true, force: true}); }
 });

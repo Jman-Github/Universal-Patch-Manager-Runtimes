@@ -1,3 +1,7 @@
+import {
+  buildPathOwners, catalogAffectsRuntime, catalogPath, hasRuntimeBuildInputs, isAuxiliaryModulePath,
+} from "./runtime-build-inputs.mjs";
+
 // Release rules and plugin order adapted from UPM's .releaserc.
 export const runtimes = {
   "revanced-v21": ["revanced.v21-runtime-plugin", "revanced21-patcher-core", "revanced-legacy-patcher-core"],
@@ -14,7 +18,8 @@ export function selectedRuntimes(id) {
 }
 // Shared build inputs can affect multiple runtime artifacts.
 export const commonPaths = ["buildSrc/", "jvm-host/", "host-support/", "shared/", "gradle/",
-  "build.gradle.kts", "settings.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat", "libs/"];
+  "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
+  "gradle.properties", "gradlew", "gradlew.bat", "libs/"];
 const jvmHosts = ["revanced-v21", "revanced-v22", "morphe", "shared-support"];
 const apkEditor = ["revanced-v21", "revanced-v22", "reseam"];
 const arscLib = ["revanced-v22", "morphe", "shared-support"];
@@ -56,7 +61,6 @@ const catalogOwners = new Map([
   ["hidden-api-stub", ["revanced-v21", "revanced-v22", "morphe"]],
 ]);
 
-const catalogPath = "gradle/libs.versions.toml";
 const rootBuildPath = "build.gradle.kts";
 export const lineScopedPaths = [catalogPath, transformPath, rootBuildPath];
 
@@ -93,11 +97,14 @@ function dependencyOwners(path, lines) {
   return owners;
 }
 
-export function affectsRuntime(id, paths, changedLines = {}) {
+export function affectsRuntime(id, paths, changedLines = {}, snapshots = []) {
   if (!Object.hasOwn(runtimes, id)) throw new Error("Unknown runtime: " + id);
+  const modeled = hasRuntimeBuildInputs(id, snapshots);
   return paths.some(path => {
-    if (/^[^/]+\/src\/(?:test|androidTest)\//.test(path) ||
-        /^[^/]+\/(?:README|CHANGELOG)\.md$/.test(path)) return false;
+    if (!modeled && isAuxiliaryModulePath(path, snapshots)) return false;
+    if (modeled && path === catalogPath) return catalogAffectsRuntime(id, ...snapshots);
+    const buildOwners = modeled ? buildPathOwners(path, snapshots) : null;
+    if (buildOwners) return buildOwners.has(id);
     if (runtimes[id].some(module => path.startsWith(module + "/"))) return true;
     const owners = dependencyOwners(path, changedLines[path]);
     if (owners) return owners.has(id);
