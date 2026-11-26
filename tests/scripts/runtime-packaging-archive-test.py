@@ -10,7 +10,7 @@ for item in json.loads((ROOT/"catalog.json").read_text())["plugins"]:
         if item["id"]=="shared-support":
             assert "assets/jvm/modules.xz" in names
             for abi in ("arm64-v8a", "armeabi-v7a", "x86_64"):
-                assert f"assets/jvm/liberica-gpkg-2/{abi}.zip.xz" in names
+                assert f"assets/jvm/liberica-gpkg-3/{abi}.zip.xz" in names
                 assert f"assets/jvm/{abi}.zip.xz" not in names
             assert "assets/jvm/tools-patcher-core.jar" in names
         else:

@@ -453,7 +453,7 @@ class MorpheSession(
     }
 
     private fun writeApkDexGroupTitle(): String = when (bytecodeMode) {
-        BytecodeMode.FULL -> "Compiling DEX files: FULL"
+        BytecodeMode.STRIP_SAFE -> "Compiling DEX files: SAFE"
         else -> "Compiling DEX files: FAST"
     }
 

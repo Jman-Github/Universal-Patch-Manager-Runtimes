@@ -38,7 +38,7 @@ def prepare(runtime_id, tag, tools):
             modes=["support"]
             support_payload = {"assets/jvm/modules.xz", "assets/jvm/tools-patcher-core.jar"}
             support_payload.update(
-                f"assets/jvm/liberica-gpkg-2/{abi}.zip.xz"
+                f"assets/jvm/liberica-gpkg-3/{abi}.zip.xz"
                 for abi in ("arm64-v8a", "armeabi-v7a", "x86_64")
             )
             if not support_payload <= names:

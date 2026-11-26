@@ -68,6 +68,7 @@ export const lineScopedPaths = [catalogPath, transformPath, rootBuildPath];
 const supportVerifierLines = new Set([
   'check(zip.getEntry("assets/jvm/$abi.zip.xz") != null) { "Missing JVM image for $abi" }',
   'val image = "assets/jvm/liberica-gpkg-2/$abi.zip.xz"',
+  'val image = "assets/jvm/liberica-gpkg-3/$abi.zip.xz"',
   'check(zip.getEntry(image) != null) { "Missing JVM image at $image" }',
 ]);
 
