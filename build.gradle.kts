@@ -48,7 +48,7 @@ subprojects {
                         if (project.name == "shared-support") {
                             check(zip.getEntry("assets/jvm/modules.xz") != null)
                             listOf("arm64-v8a", "armeabi-v7a", "x86_64").forEach { abi ->
-                                val image = "assets/jvm/liberica-gpkg-2/$abi.zip.xz"
+                                val image = "assets/jvm/liberica-gpkg-3/$abi.zip.xz"
                                 check(zip.getEntry(image) != null) { "Missing JVM image at $image" }
                             }
                         } else {
